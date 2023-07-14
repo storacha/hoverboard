@@ -29,5 +29,5 @@ const dialer = await createLibp2p({
 // dialer.addEventListener('peer:identify', console.log)
 const peer = await dialer.dial(PEER_ADDR)
 console.log('Connected to hoverboard 🛹', peer.remoteAddr.toString())
-await dialer.hangUp(peer)
+await dialer.hangUp(PEER_ADDR)
 await dialer.stop()

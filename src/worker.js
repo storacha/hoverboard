@@ -1,67 +1,17 @@
 /* eslint-env serviceworker */
-import { createFromJSON } from '@libp2p/peer-id-factory'
-import { createLibp2p } from 'libp2p'
-import { identifyService } from 'libp2p/identify'
-import { mplex } from '@libp2p/mplex'
-import { WebSockets } from 'cf-libp2p-ws-transport'
-import { multiaddr } from '@multiformats/multiaddr'
+import { getLibp2p } from './libp2p.js'
 import { version } from '../package.json'
-
-/** @type {import('cf-libp2p-ws-transport').WebSocketListener} */
-let libp2pWebSocket
-
-/** @type {import('libp2p').Libp2p} */
-let libp2p
 
 /**
  * @typedef {object} Env
  * @prop {string} LISTEN_ADDR - libp2p multiaddr for ip/port to bind to
- * @prop {string} PEER_ID_JSON
+ * @prop {string} DYNAMO_TABLE - block index table name
+ * @prop {string} DYNAMO_REGION - block index table region
+ * @prop {R2Bucket} CARPARK - R2 binding
+ * @prop {string} AWS_ACCESS_KEY_ID - secret key id
+ * @prop {string} AWS_SECRET_ACCESS_KEY - secret key
+ * @prop {string} PEER_ID_JSON - secret stringified json peerId spec for this node
  */
-
-/**
- * Setup our libp2p service
- * @param {Env} env
- */
-export async function initLibp2p (env) {
-  const listenAddr = env.LISTEN_ADDR
-  const peerId = await createFromJSON(JSON.parse(env.PEER_ID_JSON))
-  console.log(`🛹 ${listenAddr}/p2p/${peerId.toString()}`)
-
-  const { noise } = await import('@chainsafe/libp2p-noise')
-  const ws = new WebSockets()
-
-  libp2p = await createLibp2p({
-    peerId,
-    addresses: { listen: [listenAddr] },
-    transports: [() => ws],
-    streamMuxers: [mplex()],
-    connectionEncryption: [noise()],
-    services: {
-      identify: identifyService()
-    }
-  })
-
-  // @ts-expect-error
-  libp2pWebSocket = ws.listenerForMultiaddr(multiaddr(listenAddr))
-  if (!libp2pWebSocket) {
-    throw new Error(`No listener for provided listen address ${listenAddr}`)
-  }
-
-  return libp2p
-}
-
-/**
- * handler for GET /
- * @param {Env} env
- */
-export async function getHome (env) {
-  const peerId = JSON.parse(env.PEER_ID_JSON).id
-  const body = `⁂ hoverboard v${version} ${peerId}\n`
-  return new Response(body, {
-    headers: { 'content-type': 'text/plain' }
-  })
-}
 
 export default {
   /**
@@ -77,13 +27,12 @@ export default {
     try {
       const upgrade = request.headers.get('Upgrade')
       if (upgrade === 'websocket') {
-        if (!libp2pWebSocket) {
-          await initLibp2p(env)
-        }
-        const res = await libp2pWebSocket.handleRequest(request)
+        const libp2p = await getLibp2p(env)
+        const res = await libp2p.handleRequest(request)
         return res
       }
 
+      // not a libp2p req. handle as http
       const { pathname } = new URL(request.url)
       if (pathname === '' || pathname === '/') {
         return getHome(env)
@@ -95,6 +44,18 @@ export default {
       return new Response(err.message ?? err, { status: 500 })
     }
   }
+}
+
+/**
+ * handler for GET /
+ * @param {Env} env
+ */
+export async function getHome (env) {
+  const peerId = JSON.parse(env.PEER_ID_JSON).id
+  const body = `⁂ hoverboard v${version} ${peerId}\n`
+  return new Response(body, {
+    headers: { 'content-type': 'text/plain; charset=utf-8' }
+  })
 }
 
 /* HOVERBOARD 🛹 */
