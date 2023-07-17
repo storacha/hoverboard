@@ -5,6 +5,11 @@ import { webSockets } from '@libp2p/websockets'
 import { identifyService } from 'libp2p/identify'
 import { createLibp2p } from 'libp2p'
 import { mplex } from '@libp2p/mplex'
+import { createHelia } from 'helia'
+import { unixfs } from '@helia/unixfs'
+import { Builder } from './lib/builder.js'
+import { Blob } from 'node:buffer'
+import { createDynamo, createDynamoTable, createS3, createS3Bucket } from './lib/aws.js'
 
 import test from 'ava'
 
@@ -18,14 +23,11 @@ test.after(_ => {
 })
 
 /**
- * @param {Record<string, string>} env
+ * @param {import('../src/worker.js').Env} env
  */
 async function createWorker (env = {}) {
   const w = await testWorker('src/worker.js', {
-    vars: {
-      PEER_ID_JSON,
-      ...env
-    },
+    vars: env,
     experimental: {
       disableExperimentalWarning: true
     }
@@ -37,21 +39,40 @@ async function createWorker (env = {}) {
 /**
  * @param {object} worker
  * @param {string} worker.ip
- * @param {number} worker.port
+ * @param {number} worker.address
  */
 function getListenAddr ({ port, address }) {
   return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${PEER_ID}`)
 }
 
-test('get /', async t => {
-  const worker = await createWorker()
-  const resp = await worker.fetch()
-  const text = await resp.text()
-  t.regex(text, new RegExp(PEER_ID))
-})
+/**
+ * - create dag, pack to car, add indexes to dynamo and blocks to s3
+ * - start hoverboard worker
+ * - start local libp2p node, connect to hoverboard
+ * - wrap libp2p in helia, fetch rood cid of dag from helia
+ * - assert blocks are in helia, and data round trips
+ */
+test('helia bitswap', async t => {
+  const [dynamo, s3] = await Promise.all([createDynamo(), createS3()])
+  const [table, bucket] = await Promise.all([createDynamoTable(dynamo.client), createS3Bucket(s3.client)])
+  const builder = new Builder(dynamo.client, table, s3.client, 'us-west-2', bucket)
+  const encoder = new TextEncoder()
+  const blob = new Blob([encoder.encode('hoverboard 🛹')])
+  const root = await builder.add(blob)
 
-test('libp2p identify', async t => {
-  const worker = await createWorker()
+  console.log('Creating local hoverboard')
+  const worker = await createWorker({
+    S3_ENDPOINT: s3.endpoint,
+    DYNAMO_ENDPOINT: dynamo.endpoint,
+    DYNAMO_REGION: dynamo.region,
+    DYNAMO_TABLE: table,
+    AWS_ACCESS_KEY_ID: s3.credentials.accessKeyId,
+    AWS_SECRET_ACCESS_KEY: s3.credentials.secretAccessKey,
+    PEER_ID_JSON
+  })
+  const hoverboard = getListenAddr(worker)
+
+  console.log('Creating local libp2p')
   const libp2p = await createLibp2p({
     connectionEncryption: [noise()],
     transports: [webSockets()],
@@ -60,9 +81,28 @@ test('libp2p identify', async t => {
       identify: identifyService()
     }
   })
-  const peerAddr = getListenAddr(worker)
-  console.log(peerAddr)
-  const peer = await libp2p.dial(peerAddr)
+
+  console.log('Creating local helia')
+  const helia = await createHelia({
+    libp2p
+  })
+  const heliaFs = unixfs(helia)
+
+  console.log(`Dialing ${hoverboard}`)
+  const peer = await libp2p.dial(hoverboard)
   t.is(peer.remoteAddr.getPeerId().toString(), PEER_ID)
-  await t.notThrowsAsync(() => libp2p.services.identify.identify(peer))
+
+  const decoder = new TextDecoder('utf8')
+  let text = ''
+
+  console.log(`Fetching ${root}`)
+  for await (const chunk of heliaFs.cat(root)) {
+    text += decoder.decode(chunk, { stream: true })
+  }
+
+  text += decoder.decode()
+
+  t.true(await helia.blockstore.has(root), 'block should now be in helia blockstore')
+
+  t.is(text, 'hoverboard 🛹', 'bitswap roundtrippin')
 })
