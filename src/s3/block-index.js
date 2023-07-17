@@ -5,7 +5,7 @@ import retry from 'p-retry'
 
 /**
  * @typedef {{ bucket: string, region: string, key: string, offset: number, length: number }} IndexEntry
- * @typedef {{ get: (cid: import('multiformats').UnknownLink) => Promise<IndexEntry[]> }} BlockIndex
+ * @typedef {{ get: (cid: import('multiformats').UnknownLink, idxEntries?: IndexEntry[]) => Promise<IndexEntry[]> }} BlockIndex
  */
 
 /** @implements {BlockIndex} */
@@ -64,5 +64,49 @@ export class DynamoIndex {
       })
     }
     return items
+  }
+}
+
+export class CachingIndex {
+  /**
+   * @param {DynamoIndex} index
+   * @param {Cache} cache
+   * @param {ExecutionContext} ctx
+   */
+  constructor (index, cache, ctx) {
+    this.index = index
+    this.cache = cache
+    this.ctx = ctx
+  }
+
+  /**
+   * @param {import('multiformats').UnknownLink} cid
+   * @returns {Promise<IndexEntry[]>}
+   */
+  async get (cid) {
+    const key = this.toCacheKey(cid)
+    const cached = await this.cache.match(key)
+    if (cached) {
+      return cached.json()
+    }
+    const res = await this.index.get(cid)
+    if (res.length > 0) {
+      this.ctx.waitUntil(this.cache.put(key, new Response(JSON.stringify(res))))
+    }
+    return res
+  }
+
+  /**
+   * @param {import('multiformats').UnknownLink} cid
+   */
+  toCacheKey (cid) {
+    const key = base58btc.encode(cid.multihash.bytes)
+    const cacheUrl = new URL(key, 'https://dynamo.web3.storage/')
+    return new Request(cacheUrl.toString(), {
+      method: 'GET',
+      headers: new Headers({
+        'content-type': 'application/json'
+      })
+    })
   }
 }

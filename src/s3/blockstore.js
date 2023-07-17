@@ -10,7 +10,7 @@ import { OrderedCarBlockBatcher } from './block-batch.js'
  */
 export class DynamoBlockstore {
   /**
-   * @param {import('./block-index.js').DynamoIndex} index
+   * @param {import('./block-index.js').BlockIndex} index
    * @param {Record<string, import('@aws-sdk/client-s3').S3Client>} s3Clients
    */
   constructor (index, s3Clients) {
