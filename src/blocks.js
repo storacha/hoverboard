@@ -65,9 +65,9 @@ export class CachingBlockStore {
    * */
   async get (cid) {
     const key = this.toCacheKey(cid)
-    console.log('checking cache')
     const cached = await this.cache.match(key)
     if (cached) {
+      console.log('cached block', key.url)
       const buff = await cached.arrayBuffer()
       return new Uint8Array(buff)
     }
@@ -82,7 +82,7 @@ export class CachingBlockStore {
    * @param {UnknownLink} cid
    */
   toCacheKey (cid) {
-    const cacheUrl = new URL(`${cid}?format=raw`, 'https://ipfs.io/ipfs')
+    const cacheUrl = new URL(`/ipfs/${cid}?format=raw`, 'https://ipfs.io')
     return new Request(cacheUrl.toString(), {
       method: 'GET'
     })

@@ -87,6 +87,7 @@ export class CachingIndex {
     const key = this.toCacheKey(cid)
     const cached = await this.cache.match(key)
     if (cached) {
+      console.log('cached index', key.url)
       return cached.json()
     }
     const res = await this.index.get(cid)
@@ -101,7 +102,7 @@ export class CachingIndex {
    */
   toCacheKey (cid) {
     const key = base58btc.encode(cid.multihash.bytes)
-    const cacheUrl = new URL(key, 'https://dynamo.web3.storage/')
+    const cacheUrl = new URL(key, 'https://dynamo.web3.storage')
     return new Request(cacheUrl.toString(), {
       method: 'GET',
       headers: new Headers({
