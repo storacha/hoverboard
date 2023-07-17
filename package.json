@@ -51,7 +51,8 @@
   "ava": {
     "files": [
       "test/**/*",
-      "!test/lib"
+      "!test/lib",
+      "!test/fixture"
     ]
   }
 }
