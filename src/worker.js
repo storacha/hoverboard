@@ -7,6 +7,9 @@ import { version } from '../package.json'
  * @prop {string} LISTEN_ADDR - libp2p multiaddr for ip/port to bind to
  * @prop {string} DYNAMO_TABLE - block index table name
  * @prop {string} DYNAMO_REGION - block index table region
+ * @prop {string} [DYNAMO_ENDPOINT] - override the dynamo api url
+ * @prop {string} [S3_ENDPOINT] - override the s3 api url
+ * @prop {string} [S3_REGIONS] - override the list of s3 regions to fetch blocks from
  * @prop {R2Bucket} CARPARK - R2 binding
  * @prop {string} AWS_ACCESS_KEY_ID - secret key id
  * @prop {string} AWS_SECRET_ACCESS_KEY - secret key

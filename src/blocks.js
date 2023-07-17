@@ -63,7 +63,7 @@ export class DagHausBlockStore {
 
     for (const { key, offset, length } of idxEntries) {
       const carKey = toCarKey(key)
-      if (carKey) {
+      if (carKey && this.carpark) {
         const obj = await this.carpark.get(carKey, { range: { offset, length } })
         if (obj) {
           console.log(`got ${cid} from R2 bytes=${offset}-${offset + length - 1}`)
