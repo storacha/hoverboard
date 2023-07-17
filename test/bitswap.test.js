@@ -53,6 +53,7 @@ function getListenAddr ({ port, address }) {
  * - assert blocks are in helia, and data round trips
  */
 test('helia bitswap', async t => {
+  t.timeout(60_000)
   const [dynamo, s3] = await Promise.all([createDynamo(), createS3()])
   const [table, bucket] = await Promise.all([createDynamoTable(dynamo.client), createS3Bucket(s3.client)])
   const builder = new Builder(dynamo.client, table, s3.client, 'us-west-2', bucket)
