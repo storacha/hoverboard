@@ -1,8 +1,8 @@
-name: Test
-description: 'Setup and test'
+name: setup-npm
+description: Setup node and npm
 
 runs:
-  using: "composite"
+  using: 'composite'
   steps:
     - uses: actions/setup-node@v3
       with:
@@ -10,6 +10,4 @@ runs:
         node-version: 18
         cache: 'npm'
     - run: npm ci
-      shell: bash
-    - run: npm test
       shell: bash
