@@ -10,7 +10,7 @@
     "start": "wrangler dev",
     "lint": "standard",
     "pretest": "standard",
-    "test": "ava",
+    "test": "ava --serial --no-worker-threads",
     "dial": "node example/dial.js"
   },
   "devDependencies": {
