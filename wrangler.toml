@@ -21,10 +21,9 @@ preview_id = "f4eb0eca32e14e28b643604a82e00cb3"
 # STAGING!
 [env.staging]
 account_id = "fffa4b4363a7e5250af8357087263b3a"
-
-[env.staging.route]
-pattern = "https://hoverboard-staging.dag.haus/*"
-zone_id = "f2f8a5b1c557202c6e3d0ce0e98e4c8e"
+routes = [
+	{ pattern = "hoverboard-staging.dag.haus", custom_domain = true },
+]
 
 [env.staging.vars]
 DYNAMO_TABLE = 'staging-ep-v1-blocks-cars-position'
@@ -44,10 +43,9 @@ preview_id = "f4eb0eca32e14e28b643604a82e00cb3"
 # PROD!
 [env.production]
 account_id = "fffa4b4363a7e5250af8357087263b3a"
-
-[env.production.route]
-pattern = "https://hoverboard.dag.haus/*"
-zone_id = "f2f8a5b1c557202c6e3d0ce0e98e4c8e"
+routes = [
+	{ pattern = "hoverboard.dag.haus", custom_domain = true },
+]
 
 [env.production.vars]
 DYNAMO_TABLE = 'prod-ep-v1-blocks-cars-position'
