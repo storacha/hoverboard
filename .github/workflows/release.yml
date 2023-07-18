@@ -1,0 +1,53 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/test
+
+  changelog:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.tag-release.outputs.releases_created }}
+    steps:
+      - uses: google-github-actions/release-please-action@v3
+        id: tag-release
+        with:
+          release-type: node
+          package-name: hoverboard
+          changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"chore","section":"Other Changes","hidden":false}]'
+
+  release-staging:
+    name: staging
+    needs:
+      - changelog
+      - test
+    # deploy staging if not a release, otherwise deploy to prod
+    if: !needs.changelog.outputs.releases_created
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cloudflare/wrangler-action@2.0.0
+        with:
+          apiToken: ${{ secrets.CF_TOKEN }}
+          environment: 'staging'
+
+  release-production:
+    name: production
+    needs:
+      - changelog
+      - test
+    if: needs.changelog.outputs.releases_created
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: cloudflare/wrangler-action@2.0.0
+        with:
+          apiToken: ${{ secrets.CF_TOKEN }}
+          environment: 'production'
