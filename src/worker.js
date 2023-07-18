@@ -1,4 +1,5 @@
 /* eslint-env serviceworker */
+import { getBlockstore } from './blocks.js'
 import { getLibp2p } from './libp2p.js'
 import { version } from '../package.json'
 
@@ -10,7 +11,8 @@ import { version } from '../package.json'
  * @prop {string} [DYNAMO_ENDPOINT] - override the dynamo api url
  * @prop {string} [S3_ENDPOINT] - override the s3 api url
  * @prop {string} [S3_REGIONS] - override the list of s3 regions to fetch blocks from
- * @prop {R2Bucket} CARPARK - R2 binding
+ * @prop {R2Bucket} CARPARK - R2 binding for CAR bucket
+ * @prop {KVNamespace} DENYLIST - KV binding for denylist
  * @prop {string} AWS_ACCESS_KEY_ID - secret key id
  * @prop {string} AWS_SECRET_ACCESS_KEY - secret key
  * @prop {string} PEER_ID_JSON - secret stringified json peerId spec for this node
@@ -30,7 +32,8 @@ export default {
     try {
       const upgrade = request.headers.get('Upgrade')
       if (upgrade === 'websocket') {
-        const libp2p = await getLibp2p(env)
+        const bs = await getBlockstore(env, ctx)
+        const libp2p = await getLibp2p(env, bs)
         const res = await libp2p.handleRequest(request)
         return res
       }

@@ -13,11 +13,10 @@ binding = "CARPARK"
 bucket_name = "carpark-staging-0"
 preview_bucket_name = "carpark-staging-0"
 
-# Bind a KV Namespace. Use KV as persistent storage for small key-value pairs.
-# Docs: https://developers.cloudflare.com/workers/runtime-apis/kv
-# [[kv_namespaces]]
-# binding = "MY_KV_NAMESPACE"
-# id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+[[kv_namespaces]]
+binding = "DENYLIST"
+id = "f4eb0eca32e14e28b643604a82e00cb3"
+preview_id = "f4eb0eca32e14e28b643604a82e00cb3"
 
 # Bind a Queue producer. Use this binding to schedule an arbitrary task that may be processed later by a Queue consumer.
 # Docs: https://developers.cloudflare.com/queues/get-started

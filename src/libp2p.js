@@ -7,15 +7,15 @@ import { identifyService } from 'libp2p/identify'
 import { noise } from '@chainsafe/libp2p-noise'
 import { mplex } from '@libp2p/mplex'
 import { createLibp2p } from 'libp2p'
-import { getBlockstore } from './blocks.js'
 
 /** @typedef {import('./worker.js').Env} Env */
 
 /**
  * Setup our libp2p service
  * @param {Env} env
+ * @param {import('./deny.js').Blockstore} blockstore
  */
-export async function getLibp2p (env) {
+export async function getLibp2p (env, blockstore) {
   console.time('libp2p init')
   const listenAddr = env.LISTEN_ADDR
   const peerId = await createFromJSON(JSON.parse(env.PEER_ID_JSON))
@@ -34,8 +34,7 @@ export async function getLibp2p (env) {
     }
   })
 
-  const blocks = getBlockstore(env)
-  const miniswap = new Miniswap(blocks)
+  const miniswap = new Miniswap(blockstore)
   libp2p.handle(BITSWAP_PROTOCOL, miniswap.handler)
 
   // @ts-expect-error
