@@ -16,13 +16,28 @@ import { createLibp2p } from 'libp2p'
  * @param {import('./deny.js').Blockstore} blockstore
  */
 export async function getLibp2p (env, blockstore) {
-  console.time('libp2p init')
-  const listenAddr = env.LISTEN_ADDR
+  const listenAddr = env.LISTEN_ADDR ?? '/dns4/localhost/tcp/443/wss'
   const peerId = await createFromJSON(JSON.parse(env.PEER_ID_JSON))
-  console.log(`🛹 ${listenAddr}/p2p/${peerId.toString()}`)
-
+  // rough metrics as a staring point
+  let blocks = 0
+  let bytes = 0
+  let miss = 0
+  const miniswap = new Miniswap({
+    async has (cid) {
+      return blockstore.has(cid)
+    },
+    async get (cid) {
+      const res = await blockstore.get(cid)
+      if (res) {
+        bytes += res.byteLength
+        blocks++
+      } else {
+        miss++
+      }
+      return res
+    }
+  })
   const ws = new WebSockets()
-
   const libp2p = await createLibp2p({
     peerId,
     addresses: { listen: [listenAddr] },
@@ -33,8 +48,14 @@ export async function getLibp2p (env, blockstore) {
       identify: identifyService()
     }
   })
-
-  const miniswap = new Miniswap(blockstore)
+  libp2p.addEventListener('peer:connect', (evt) => {
+    const remotePeer = evt.detail
+    console.log(JSON.stringify({ msg: 'peer:connect', peer: remotePeer.toString() }))
+  })
+  libp2p.addEventListener('peer:disconnect', (evt) => {
+    const remotePeer = evt.detail
+    console.log(JSON.stringify({ msg: 'peer:disconnect', peer: remotePeer.toString(), blocks, bytes, miss }))
+  })
   libp2p.handle(BITSWAP_PROTOCOL, miniswap.handler)
 
   // @ts-expect-error
@@ -42,6 +63,5 @@ export async function getLibp2p (env, blockstore) {
   if (!libp2pWebSocket) {
     throw new Error(`No listener for provided listen address ${listenAddr}`)
   }
-  console.timeEnd('libp2p init')
   return libp2pWebSocket
 }
