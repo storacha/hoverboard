@@ -69,7 +69,7 @@ export class DynamoIndex {
 
 export class CachingIndex {
   /**
-   * @param {DynamoIndex} index
+   * @param {BlockIndex} index
    * @param {Cache} cache
    * @param {ExecutionContext} ctx
    */

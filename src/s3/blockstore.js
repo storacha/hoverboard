@@ -6,7 +6,16 @@ import retry from 'p-retry'
 import { OrderedCarBlockBatcher } from './block-batch.js'
 
 /**
+ * @typedef {import('multiformats').UnknownLink} UnknownLink
+ * @typedef {import('./block-index.js').IndexEntry} IndexEntry
+ *
+ * @typedef {object} CarBlockstore
+ * @prop {(cid: UnknownLink, idxEntries?: IndexEntry[]) => Promise<{cid: UnknownLink, bytes: Uint8Array} | undefined>} get
+ */
+
+/**
  * A blockstore that is backed by a DynamoDB index and S3 buckets.
+ * @implements {CarBlockstore}
  */
 export class DynamoBlockstore {
   /**
@@ -21,8 +30,8 @@ export class DynamoBlockstore {
 
   /**
    * @param {import('multiformats').UnknownLink} cid
-   * @param {import('./block-index.js').IndexEntry[]} idxEntries
-   **/
+   * @param {import('./block-index.js').IndexEntry[]} [idxEntries]
+   */
   async get (cid, idxEntries) {
     idxEntries = idxEntries ?? await this._idx.get(cid)
     if (!idxEntries.length) return
@@ -44,6 +53,10 @@ export class DynamoBlockstore {
   }
 }
 
+/**
+ * Merge requests for CIDs in the same CAR into fewer, larger range requests.
+ * @implements {CarBlockstore}
+ */
 export class BatchingDynamoBlockstore extends DynamoBlockstore {
   /** @type {Map<string, Array<import('p-defer').DeferredPromise<import('dagula').Block|undefined>>>} */
   #pendingBlocks = new Map()
@@ -166,8 +179,8 @@ export class BatchingDynamoBlockstore extends DynamoBlockstore {
 
   /**
    * @param {import('multiformats').UnknownLink} cid
-   * @param {import('./block-index.js').IndexEntry[]} idxEntries
-   **/
+   * @param {import('./block-index.js').IndexEntry[]} [idxEntries]
+   */
   async get (cid, idxEntries) {
     idxEntries = idxEntries ?? await this._idx.get(cid)
     if (!idxEntries.length) return

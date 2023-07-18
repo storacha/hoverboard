@@ -38,9 +38,12 @@ export async function getBlockstore (env, ctx) {
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
 }
 
+/**
+ * Cache block bytes for a CID
+ */
 export class CachingBlockStore {
   /**
-   * @param {import('./deny.js').Blockstore} blockstore
+   * @param {Blockstore} blockstore
    * @param {Cache} cache
    * @param {ExecutionContext} ctx
    */
@@ -52,7 +55,7 @@ export class CachingBlockStore {
 
   /**
    * @param {UnknownLink} cid
-   * */
+   */
   async has (cid) {
     const key = this.toCacheKey(cid)
     const cached = await this.cache.match(key)
@@ -62,7 +65,7 @@ export class CachingBlockStore {
 
   /**
    * @param {UnknownLink} cid
-   * */
+   */
   async get (cid) {
     const key = this.toCacheKey(cid)
     const cached = await this.cache.match(key)
@@ -90,13 +93,15 @@ export class CachingBlockStore {
 }
 
 /**
- * A blockstore that copes with the dag.haus bucket legacy
+ * A blockstore that copes with the dag.haus bucket legacy.
+ * Also adapts car block style blockstore api that returns {cid, bytes}
+ * to one that returns just the bytes to blend with miniswap api.
  */
 export class DagHausBlockStore {
   /**
    * @param {import('./s3/block-index.js').BlockIndex} dynamo
    * @param {R2Bucket} carpark
-   * @param {BatchingDynamoBlockstore} s3
+   * @param {import('./s3/blockstore.js').CarBlockstore} s3
    */
   constructor (dynamo, carpark, s3) {
     this.dynamo = dynamo
@@ -109,7 +114,6 @@ export class DagHausBlockStore {
    * @param {UnknownLink} cid
    */
   async has (cid) {
-    // TODO: check denylist
     const res = await this.dynamo.get(cid)
     return res.length > 0
   }
@@ -119,7 +123,6 @@ export class DagHausBlockStore {
    * @param {UnknownLink} cid
    */
   async get (cid) {
-    // TODO: check denylist
     const idxEntries = await this.dynamo.get(cid)
     if (idxEntries.length === 0) return
 
