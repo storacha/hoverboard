@@ -29,7 +29,7 @@ export async function getLibp2p (env, blockstore) {
     async get (cid) {
       const res = await blockstore.get(cid)
       if (res) {
-        bytes += res?.byteLength ?? 0
+        bytes += res.byteLength
         blocks++
       } else {
         miss++
