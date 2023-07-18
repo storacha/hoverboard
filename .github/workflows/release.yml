@@ -26,6 +26,8 @@ jobs:
 
   release-staging:
     name: staging
+    environment: staging
+    concurrency: staging
     needs:
       - changelog
       - test
@@ -38,10 +40,12 @@ jobs:
       - uses: cloudflare/wrangler-action@2.0.0
         with:
           apiToken: ${{ secrets.CF_TOKEN }}
-          environment: 'staging'
+          command: deploy --env staging
 
   release-production:
     name: production
+    environment: production
+    concurrency: production
     needs:
       - changelog
       - test
@@ -53,4 +57,4 @@ jobs:
       - uses: cloudflare/wrangler-action@2.0.0
         with:
           apiToken: ${{ secrets.CF_TOKEN }}
-          environment: 'production'
+          command: deploy --env production
