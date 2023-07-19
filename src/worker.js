@@ -1,4 +1,5 @@
 /* eslint-env serviceworker */
+import toMultiaddr from '@multiformats/uri-to-multiaddr'
 import { getBlockstore } from './blocks.js'
 import { getLibp2p } from './libp2p.js'
 import { version } from '../package.json'
@@ -41,11 +42,12 @@ export default {
       // not a libp2p req. handle as http
       const { pathname } = new URL(request.url)
       if (pathname === '' || pathname === '/') {
-        return getHome(env)
+        const res = await getHome(request, env)
+        return res
       }
       return new Response('Not Found', { status: 404 })
     } catch (err) {
-      console.error(err)
+      console.error('fetch handler error', err)
       // @ts-expect-error
       return new Response(err.message ?? err, { status: 500 })
     }
@@ -54,11 +56,13 @@ export default {
 
 /**
  * handler for GET /
+ * @param {Request} request
  * @param {Env} env
  */
-export async function getHome (env) {
+export async function getHome (request, env) {
   const peerId = JSON.parse(env.PEER_ID_JSON).id
-  const body = `⁂ hoverboard v${version} ${peerId}\n`
+  const addr = toMultiaddr(request.url.replace('http', 'ws')).encapsulate(`/p2p/${peerId}`)
+  const body = `⁂ hoverboard v${version} ${addr}\n`
   return new Response(body, {
     headers: { 'content-type': 'text/plain; charset=utf-8' }
   })

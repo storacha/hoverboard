@@ -36,20 +36,30 @@ export class DynamoIndex {
    * @returns {Promise<IndexEntry[]>}
    */
   async get (cid) {
-    const res = await retry(async () => {
-      const command = new QueryCommand({
-        TableName: this.#table,
-        Limit: this.#max,
-        KeyConditions: {
-          blockmultihash: {
-            ComparisonOperator: 'EQ',
-            AttributeValueList: [{ S: base58btc.encode(cid.multihash.bytes) }]
-          }
-        },
-        AttributesToGet: ['carpath', 'length', 'offset']
-      })
-      return await this.#client.send(command)
-    }, { minTimeout: 100, onFailedAttempt: err => console.warn(`failed DynamoDB request for: ${cid}`, err) })
+    const command = new QueryCommand({
+      TableName: this.#table,
+      Limit: this.#max,
+      KeyConditions: {
+        blockmultihash: {
+          ComparisonOperator: 'EQ',
+          AttributeValueList: [{ S: base58btc.encode(cid.multihash.bytes) }]
+        }
+      },
+      AttributesToGet: ['carpath', 'length', 'offset']
+    })
+    const res = await retry(() => {
+      return this.#client.send(command)
+    }, {
+      minTimeout: 100,
+      retries: 5,
+      onFailedAttempt: err => {
+        console.warn(`failed DynamoDB request for: ${cid}`, err)
+        if (err.message.startsWith('Too many subrequests')) {
+          // rethrow to stop retrying
+          throw err
+        }
+      }
+    })
     const items = (res.Items ?? []).map(item => {
       const { carpath, offset, length } = unmarshall(item)
       const [region, bucket, ...rest] = carpath.split('/')
