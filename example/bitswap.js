@@ -1,6 +1,5 @@
 import { multiaddr } from '@multiformats/multiaddr'
 import * as Dagula from 'dagula/p2p.js'
-import { CID } from 'multiformats/cid'
 
 /**
  * Fetch cids via bitswap
@@ -15,7 +14,7 @@ import { CID } from 'multiformats/cid'
  * $ curl https://hoverboard-staging.dag.haus
  * ⁂ hoverboard v0.0.0 /dns4/hoverboard-staging.dag.haus/tcp/443/wss/p2p/Qmc5vg9zuLYvDR1wtYHCaxjBHenfCNautRwCjG3n5v5fbs
  *
- * $ node loads.js [multiaddr] [cid1...]
+ * $ node bitswap.js [multiaddr] [cid1...]
  * Connecting to /dns4/hoverboard-staging.dag.haus/tcp/443/wss/p2p/Qmc5vg9zuLYvDR1wtYHCaxjBHenfCNautRwCjG3n5v5fbs
  * Fetching bafybeicm3skx7ps2bwkh56l3mirh3hu4hmkfttfwjkmk4cr25sxtf2jmby
  * ```

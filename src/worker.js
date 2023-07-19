@@ -1,7 +1,8 @@
 /* eslint-env serviceworker */
 import toMultiaddr from '@multiformats/uri-to-multiaddr'
+import { WebSockets } from 'cf-libp2p-ws-transport'
+import { getLibp2p, getPeerId, getWebSocketListener } from './libp2p.js'
 import { getBlockstore } from './blocks.js'
-import { getLibp2p } from './libp2p.js'
 import { version } from '../package.json'
 
 /**
@@ -30,12 +31,19 @@ export default {
    * @param {ExecutionContext} ctx
    */
   async fetch (request, env, ctx) {
+    /** @type {import('@cloudflare/workers-types').WebSocket | undefined} */
+    let websocket
     try {
       const upgrade = request.headers.get('Upgrade')
       if (upgrade === 'websocket') {
+        const transport = new WebSockets()
+        const peerId = await getPeerId(env)
         const bs = await getBlockstore(env, ctx)
-        const libp2p = await getLibp2p(env, bs)
-        const res = await libp2p.handleRequest(request)
+        await getLibp2p(env, bs, peerId, transport)
+        const listener = getWebSocketListener(env, transport)
+        const res = await listener.handleRequest(request)
+        // @ts-expect-error res will have a raw websocket server on it if worked.
+        websocket = res.websocket
         return res
       }
 
@@ -47,6 +55,10 @@ export default {
       }
       return new Response('Not Found', { status: 404 })
     } catch (err) {
+      if (websocket) {
+        // @ts-expect-error
+        websocket.close(418, err.message)
+      }
       console.error('fetch handler error', err)
       // @ts-expect-error
       return new Response(err.message ?? err, { status: 500 })
@@ -60,7 +72,7 @@ export default {
  * @param {Env} env
  */
 export async function getHome (request, env) {
-  const peerId = JSON.parse(env.PEER_ID_JSON).id
+  const peerId = await getPeerId(env)
   const addr = toMultiaddr(request.url.replace('http', 'ws')).encapsulate(`/p2p/${peerId}`)
   const body = `⁂ hoverboard v${version} ${addr}\n`
   return new Response(body, {
