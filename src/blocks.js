@@ -5,7 +5,7 @@ import { digest } from 'multiformats'
 import { CID } from 'multiformats/cid'
 import { fromString } from 'uint8arrays/from-string'
 import { DynamoIndex, CachingIndex } from './s3/block-index.js'
-import { BatchingDynamoBlockstore } from './s3/blockstore.js'
+import { DynamoBlockstore } from './s3/blockstore.js'
 import { DenyingBlockStore } from './deny.js'
 
 const CAR = 0x202
@@ -30,9 +30,9 @@ const CAR = 0x202
  * @param {ExecutionContext} ctx
  */
 export async function getBlockstore (env, ctx) {
-  const dynamo = new DynamoIndex(getDynamoClient(env), env.DYNAMO_TABLE, { maxEntries: 3 })
+  const dynamo = new DynamoIndex(getDynamoClient(env), env.DYNAMO_TABLE, { maxEntries: 3, preferRegion: 'us-west-2' })
   const index = new CachingIndex(dynamo, await caches.open(`dynamo:${env.DYNAMO_TABLE}`), ctx)
-  const s3 = new BatchingDynamoBlockstore(index, getS3Clients(env))
+  const s3 = new DynamoBlockstore(index, getS3Clients(env))
   const r2 = new DagHausBlockStore(index, env.CARPARK, s3)
   const cached = new CachingBlockStore(r2, await caches.open('blockstore:bytes'), ctx)
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
@@ -75,7 +75,7 @@ export class CachingBlockStore {
     }
     const res = await this.blockstore.get(cid)
     if (res) {
-      this.ctx.waitUntil(this.cache.put(key, new Response(res).clone()))
+      this.ctx.waitUntil(this.cache.put(key, new Response(res)))
       return res
     }
   }

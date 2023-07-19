@@ -6,16 +6,24 @@ import { createLibp2p } from 'libp2p'
 import { mplex } from '@libp2p/mplex'
 
 /**
- * Run the `wranger dev` then run this to connect to the worker via libp2p
+ * Dial a libp2p node
+ *
+ * Run the `wrangler dev` then curl the worker url to get the multiaddr.
+ * Set secrets like PEER_ID_JSON in .dev.vars per the readme
  *
  * ```sh
- * $ node dial.js [worker url]
+ * curl https://hoverboard-staging.dag.haus
+ * ⁂ hoverboard v0.0.0 /dns4/hoverboard-staging.dag.haus/tcp/443/wss/p2p/Qmc5vg9zuLYvDR1wtYHCaxjBHenfCNautRwCjG3n5v5fbs
+ * ```
+ *
+ * Usage:
+ * ```sh
+ * $ node dial.js /dns4/hoverboard-staging.dag.haus/tcp/443/wss/p2p/Qmc5vg9zuLYvDR1wtYHCaxjBHenfCNautRwCjG3n5v5fbs
  * ```
  */
 
-const { hostname, port } = new URL(process.argv[2] ?? 'http://127.0.0.1:8787/')
-const PEER_ID = 'Qmcv3CsJAN8ptXR8vm5a5GRrzkHGjaEUF9cQRGzYptMwzp'
-const PEER_ADDR = multiaddr(`/ip4/${hostname}/tcp/${port}/ws/p2p/${PEER_ID}`)
+const peer = multiaddr(process.argv[2] ?? '/dns4/hoverboard-staging.dag.haus/tcp/443/wss/p2p/Qmc5vg9zuLYvDR1wtYHCaxjBHenfCNautRwCjG3n5v5fbs')
+console.log(`Connecting to ${peer}`)
 
 const dialer = await createLibp2p({
   connectionEncryption: [noise()],
@@ -26,8 +34,7 @@ const dialer = await createLibp2p({
   }
 })
 
-// dialer.addEventListener('peer:identify', console.log)
-const peer = await dialer.dial(PEER_ADDR)
-console.log('Connected to hoverboard 🛹', peer.remoteAddr.toString())
-await dialer.hangUp(PEER_ADDR)
+const conn = await dialer.dial(peer)
+console.log('Connected to hoverboard 🛹', conn.remoteAddr.toString())
+await dialer.hangUp(peer)
 await dialer.stop()
