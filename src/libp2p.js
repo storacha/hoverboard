@@ -20,11 +20,10 @@ export async function getPeerId (env) {
 /**
  * Setup our libp2p service
  * @param {Env} env
- * @param {import('./deny.js').Blockstore} blockstore
- * @param {import('@libp2p/interface-peer-id').PeerId} peerId
  * @param {import('cf-libp2p-ws-transport').WebSockets} transport
  */
-export async function getLibp2p (env, blockstore, peerId, transport) {
+export async function getLibp2p (env, transport) {
+  const peerId = await getPeerId(env)
   const libp2p = await createLibp2p({
     peerId,
     addresses: { listen: [getListenAddr(env)] },
@@ -35,51 +34,43 @@ export async function getLibp2p (env, blockstore, peerId, transport) {
       identify: identifyService()
     }
   })
+  return libp2p
+}
 
-  // rough metrics as a staring point
-  let blocks = 0
-  let bytes = 0
-  let miss = 0
-
+/**
+ * @param {import('libp2p').Libp2p} libp2p
+ * @param {import('./blocks.js').Blockstore} blockstore
+ * @param {(err: Error) => Promise<void>} onError
+ */
+export function enableBitswap (libp2p, blockstore, onError = async () => {}) {
   const miniswap = new Miniswap({
     async has (cid) {
       try {
         const res = await blockstore.has(cid)
         return res
       } catch (err) {
-        libp2p.stop()
-        throw err
+        await onError(asError(err))
+        return false
       }
     },
     async get (cid) {
       try {
         const res = await blockstore.get(cid)
-        if (res) {
-          bytes += res.byteLength
-          blocks++
-        } else {
-          miss++
-        }
         return res
       } catch (err) {
-        libp2p.stop()
-        throw err
+        await onError(asError(err))
       }
     }
   })
-
-  libp2p.addEventListener('peer:connect', (evt) => {
-    const remotePeer = evt.detail
-    console.log(JSON.stringify({ msg: 'peer:connect', peer: remotePeer.toString() }))
-  })
-  libp2p.addEventListener('peer:disconnect', (evt) => {
-    const remotePeer = evt.detail
-    console.log(JSON.stringify({ msg: 'peer:disconnect', peer: remotePeer.toString(), blocks, bytes, miss }))
-  })
-
   libp2p.handle(BITSWAP_PROTOCOL, miniswap.handler)
+}
 
-  return libp2p
+/** @param {unknown} err */
+function asError (err) {
+  if (err instanceof Error) {
+    return err
+  }
+  return new Error(`${err}`)
 }
 
 /**

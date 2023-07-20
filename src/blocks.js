@@ -28,13 +28,14 @@ const CAR = 0x202
 /**
  * @param {Env} env
  * @param {ExecutionContext} ctx
+ * @param {import('./metrics.js').Metrics} metrics
  */
-export async function getBlockstore (env, ctx) {
-  const dynamo = new DynamoIndex(getDynamoClient(env), env.DYNAMO_TABLE, { maxEntries: 3, preferRegion: 'us-west-2' })
-  const index = new CachingIndex(dynamo, await caches.open(`dynamo:${env.DYNAMO_TABLE}`), ctx)
+export async function getBlockstore (env, ctx, metrics) {
+  const dynamo = new DynamoIndex(getDynamoClient(env), env.DYNAMO_TABLE, metrics, { maxEntries: 3, preferRegion: 'us-west-2' })
+  const index = new CachingIndex(dynamo, await caches.open(`dynamo:${env.DYNAMO_TABLE}`), ctx, metrics)
   const s3 = new DynamoBlockstore(index, getS3Clients(env))
-  const r2 = new DagHausBlockStore(index, env.CARPARK, s3)
-  const cached = new CachingBlockStore(r2, await caches.open('blockstore:bytes'), ctx)
+  const r2 = new DagHausBlockStore(index, env.CARPARK, s3, metrics)
+  const cached = new CachingBlockStore(r2, await caches.open('blockstore:bytes'), ctx, metrics)
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
 }
 
@@ -46,11 +47,13 @@ export class CachingBlockStore {
    * @param {Blockstore} blockstore
    * @param {Cache} cache
    * @param {ExecutionContext} ctx
+   * @param {import('./metrics.js').Metrics} metrics
    */
-  constructor (blockstore, cache, ctx) {
+  constructor (blockstore, cache, ctx, metrics) {
     this.blockstore = blockstore
     this.cache = cache
     this.ctx = ctx
+    this.metrics = metrics
   }
 
   /**
@@ -71,7 +74,11 @@ export class CachingBlockStore {
     const cached = await this.cache.match(key)
     if (cached) {
       const buff = await cached.arrayBuffer()
-      return new Uint8Array(buff)
+      const bytes = new Uint8Array(buff)
+      this.metrics.blocks++
+      this.metrics.blocksCached++
+      this.metrics.blockBytes += bytes.byteLength
+      this.metrics.blockBytesCached += bytes.byteLength
     }
     const res = await this.blockstore.get(cid)
     if (res) {
@@ -101,11 +108,13 @@ export class DagHausBlockStore {
    * @param {import('./s3/block-index.js').BlockIndex} dynamo
    * @param {R2Bucket} carpark
    * @param {import('./s3/blockstore.js').CarBlockstore} s3
+   * @param {import('./metrics.js').Metrics} metrics
    */
-  constructor (dynamo, carpark, s3) {
+  constructor (dynamo, carpark, s3, metrics) {
     this.dynamo = dynamo
     this.carpark = carpark
     this.s3 = s3
+    this.metrics = metrics
   }
 
   /**
@@ -131,7 +140,12 @@ export class DagHausBlockStore {
         const obj = await this.carpark.get(carKey, { range: { offset, length } })
         if (obj) {
           const buff = await obj.arrayBuffer()
-          return new Uint8Array(buff)
+          const bytes = new Uint8Array(buff)
+          this.metrics.blocks++
+          this.metrics.blockBytes += bytes.byteLength
+          this.metrics.blocksR2++
+          this.metrics.blockBytesR2 += bytes.byteLength
+          return bytes
         }
       }
     }
@@ -139,6 +153,10 @@ export class DagHausBlockStore {
     // fallback to s3
     const block = await this.s3.get(cid, idxEntries)
     if (!block) return undefined
+    this.metrics.blocks++
+    this.metrics.blockBytes += block.bytes.byteLength
+    this.metrics.blocksS3++
+    this.metrics.blockBytesS3 += block.bytes.byteLength
     return block.bytes
   }
 }
