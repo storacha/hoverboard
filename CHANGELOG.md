@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/web3-storage/hoverboard/compare/v1.0.0...v1.1.0) (2023-07-21)
+
+
+### Features
+
+* add metrics and filter subrequest errors ([#11](https://github.com/web3-storage/hoverboard/issues/11)) ([29b2fee](https://github.com/web3-storage/hoverboard/commit/29b2fee5aa955f64867af1941da589d227b04846))
+
 ## 1.0.0 (2023-07-19)
 
 
