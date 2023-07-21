@@ -12,21 +12,24 @@ import retry from 'p-retry'
 export class DynamoIndex {
   #client
   #table
+  #metrics
   #max
   #preferRegion
 
   /**
    * @param {import('@aws-sdk/client-dynamodb').DynamoDBClient} client
    * @param {string} table
+   * @param {import('../metrics.js').Metrics} metrics
    * @param {object} [options]
    * @param {number} [options.maxEntries] Max entries to return when multiple
    * CAR files contain the same block.
    * @param {string} [options.preferRegion] Preferred region to place first in
    * results.
    */
-  constructor (client, table, options) {
+  constructor (client, table, metrics, options) {
     this.#client = client
     this.#table = table
+    this.#metrics = metrics
     this.#max = options?.maxEntries ?? 5
     this.#preferRegion = options?.preferRegion
   }
@@ -60,6 +63,9 @@ export class DynamoIndex {
         }
       }
     })
+    if (res.$metadata.httpStatusCode && res.$metadata.httpStatusCode >= 200 && res.$metadata.httpStatusCode < 300) {
+      this.#metrics.indexes++
+    }
     const items = (res.Items ?? []).map(item => {
       const { carpath, offset, length } = unmarshall(item)
       const [region, bucket, ...rest] = carpath.split('/')
@@ -82,11 +88,13 @@ export class CachingIndex {
    * @param {BlockIndex} index
    * @param {Cache} cache
    * @param {ExecutionContext} ctx
+   * @param {import('../metrics.js').Metrics} metrics
    */
-  constructor (index, cache, ctx) {
+  constructor (index, cache, ctx, metrics) {
     this.index = index
     this.cache = cache
     this.ctx = ctx
+    this.metrics = metrics
   }
 
   /**
@@ -97,11 +105,13 @@ export class CachingIndex {
     const key = this.toCacheKey(cid)
     const cached = await this.cache.match(key)
     if (cached) {
-      console.log('cached index', key.url)
+      this.metrics.indexes++
+      this.metrics.indexesCached++
       return cached.json()
     }
     const res = await this.index.get(cid)
     if (res.length > 0) {
+      this.metrics.indexes++
       this.ctx.waitUntil(this.cache.put(key, new Response(JSON.stringify(res))))
     }
     return res

@@ -1,9 +1,10 @@
 /* eslint-env serviceworker */
 import toMultiaddr from '@multiformats/uri-to-multiaddr'
 import { WebSockets } from 'cf-libp2p-ws-transport'
-import { getLibp2p, getPeerId, getWebSocketListener } from './libp2p.js'
+import { enableBitswap, getLibp2p, getPeerId, getWebSocketListener } from './libp2p.js'
 import { getBlockstore } from './blocks.js'
 import { version } from '../package.json'
+import { Metrics } from './metrics.js'
 
 /**
  * @typedef {object} Env
@@ -36,10 +37,26 @@ export default {
     try {
       const upgrade = request.headers.get('Upgrade')
       if (upgrade === 'websocket') {
+        const metrics = new Metrics()
         const transport = new WebSockets()
-        const peerId = await getPeerId(env)
-        const bs = await getBlockstore(env, ctx)
-        await getLibp2p(env, bs, peerId, transport)
+        const bs = await getBlockstore(env, ctx, metrics)
+        const libp2p = await getLibp2p(env, transport)
+        libp2p.addEventListener('peer:connect', (evt) => {
+          const remotePeer = evt.detail
+          console.log(JSON.stringify({ msg: 'peer:connect', peer: remotePeer.toString() }))
+        })
+        libp2p.addEventListener('peer:disconnect', (evt) => {
+          const remotePeer = evt.detail
+          console.log(JSON.stringify({ msg: 'peer:disconnect', peer: remotePeer.toString(), ...metrics }))
+        })
+        const onError = async (/** @type {Error} */ err) => {
+          websocket?.close(418, err.message)
+          await libp2p.stop()
+          if (!err.message.startsWith('Too many subrequests')) {
+            throw err
+          }
+        }
+        enableBitswap(libp2p, bs, onError)
         const listener = getWebSocketListener(env, transport)
         const res = await listener.handleRequest(request)
         // @ts-expect-error res will have a raw websocket server on it if worked.

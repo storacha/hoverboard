@@ -13,6 +13,7 @@
     "moduleResolution": "node",
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "useUnknownInCatchVariables": true,
     "lib": ["ES2022", "DOM"],
     "target": "ES2022",
     "module": "ES2022",
