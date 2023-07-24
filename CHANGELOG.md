@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/web3-storage/hoverboard/compare/v1.2.0...v1.2.1) (2023-07-24)
+
+
+### Bug Fixes
+
+* set local listen addr from request ([#15](https://github.com/web3-storage/hoverboard/issues/15)) ([b3d402b](https://github.com/web3-storage/hoverboard/commit/b3d402ba84889b4926b92e4a802bbeade03eded6))
+
 ## [1.2.0](https://github.com/web3-storage/hoverboard/compare/v1.1.0...v1.2.0) (2023-07-24)
 
 
