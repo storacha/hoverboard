@@ -21,15 +21,12 @@ import { Metrics } from './metrics.js'
  * @prop {string} PEER_ID_JSON - secret stringified json peerId spec for this node
  */
 
+/** @type {ExportedHandler<Env>} */
 export default {
   /**
    * Handle requests.
    * - libp2p websocket requests hit `/p2p/:peerid` with the upgrade header set.
    * - other requests are assumed to be http
-   *
-   * @param {Request} request
-   * @param {Env} env
-   * @param {ExecutionContext} ctx
    */
   async fetch (request, env, ctx) {
     /** @type {import('@cloudflare/workers-types').WebSocket | undefined} */
