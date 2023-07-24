@@ -4,6 +4,7 @@ import { Miniswap, BITSWAP_PROTOCOL } from 'miniswap'
 import { multiaddr } from '@multiformats/multiaddr'
 import { identifyService } from 'libp2p/identify'
 import { noise } from '@chainsafe/libp2p-noise'
+import { yamux } from '@chainsafe/libp2p-yamux'
 import { mplex } from '@libp2p/mplex'
 import { createLibp2p } from 'libp2p'
 
@@ -28,7 +29,7 @@ export async function getLibp2p (env, transport) {
     peerId,
     addresses: { listen: [getListenAddr(env)] },
     transports: [() => transport],
-    streamMuxers: [mplex()],
+    streamMuxers: [mplex(), yamux()],
     connectionEncryption: [noise()],
     services: {
       identify: identifyService()
