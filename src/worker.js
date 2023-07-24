@@ -1,14 +1,12 @@
 /* eslint-env serviceworker */
-import toMultiaddr from '@multiformats/uri-to-multiaddr'
 import { WebSockets } from 'cf-libp2p-ws-transport'
-import { enableBitswap, getLibp2p, getPeerId, getWebSocketListener } from './libp2p.js'
+import { enableBitswap, getLibp2p, getListenAddr, getPeerId, getWebSocketListener } from './libp2p.js'
 import { getBlockstore } from './blocks.js'
 import { version } from '../package.json'
 import { Metrics } from './metrics.js'
 
 /**
  * @typedef {object} Env
- * @prop {string} LISTEN_ADDR - libp2p multiaddr for ip/port to bind to
  * @prop {string} DYNAMO_TABLE - block index table name
  * @prop {string} DYNAMO_REGION - block index table region
  * @prop {string} [DYNAMO_ENDPOINT] - override the dynamo api url
@@ -37,7 +35,8 @@ export default {
         const metrics = new Metrics()
         const transport = new WebSockets()
         const bs = await getBlockstore(env, ctx, metrics)
-        const libp2p = await getLibp2p(env, transport)
+        const listenAddr = getListenAddr(request)
+        const libp2p = await getLibp2p(env, transport, listenAddr)
         libp2p.addEventListener('peer:connect', (evt) => {
           const remotePeer = evt.detail
           console.log(JSON.stringify({ msg: 'peer:connect', peer: remotePeer.toString() }))
@@ -54,7 +53,7 @@ export default {
           }
         }
         enableBitswap(libp2p, bs, onError)
-        const listener = getWebSocketListener(env, transport)
+        const listener = getWebSocketListener(transport, listenAddr)
         const res = await listener.handleRequest(request)
         // @ts-expect-error res will have a raw websocket server on it if worked.
         websocket = res.websocket
@@ -87,7 +86,7 @@ export default {
  */
 export async function getHome (request, env) {
   const peerId = await getPeerId(env)
-  const addr = toMultiaddr(request.url.replace('http', 'ws')).encapsulate(`/p2p/${peerId}`)
+  const addr = getListenAddr(request).encapsulate(`/p2p/${peerId}`)
   const body = `⁂ hoverboard v${version} ${addr}\n`
   return new Response(body, {
     headers: { 'content-type': 'text/plain; charset=utf-8' }
