@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/web3-storage/hoverboard/compare/v1.1.0...v1.2.0) (2023-07-24)
+
+
+### Features
+
+* enable yamux ([#13](https://github.com/web3-storage/hoverboard/issues/13)) ([da749a0](https://github.com/web3-storage/hoverboard/commit/da749a0f78b4944851aabeebc39390c1f8224640))
+
 ## [1.1.0](https://github.com/web3-storage/hoverboard/compare/v1.0.0...v1.1.0) (2023-07-21)
 
 
