@@ -1,7 +1,6 @@
-/* eslint-env serviceworker */
+import toMultiaddr from '@multiformats/uri-to-multiaddr'
 import { createFromJSON } from '@libp2p/peer-id-factory'
 import { Miniswap, BITSWAP_PROTOCOL } from 'miniswap'
-import { multiaddr } from '@multiformats/multiaddr'
 import { identifyService } from 'libp2p/identify'
 import { noise } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
@@ -22,12 +21,13 @@ export async function getPeerId (env) {
  * Setup our libp2p service
  * @param {Env} env
  * @param {import('cf-libp2p-ws-transport').WebSockets} transport
+ * @param {import('@multiformats/multiaddr').Multiaddr} listenAddr
  */
-export async function getLibp2p (env, transport) {
+export async function getLibp2p (env, transport, listenAddr) {
   const peerId = await getPeerId(env)
   const libp2p = await createLibp2p({
     peerId,
-    addresses: { listen: [getListenAddr(env)] },
+    addresses: { listen: [listenAddr.toString()] },
     transports: [() => transport],
     streamMuxers: [mplex(), yamux()],
     connectionEncryption: [noise()],
@@ -76,11 +76,10 @@ function asError (err) {
 
 /**
  * Setup our libp2p websocket listener
- * @param {Env} env
  * @param {import('cf-libp2p-ws-transport').WebSockets} transport
+ * @param {import('@multiformats/multiaddr').Multiaddr} listenAddr
  */
-export function getWebSocketListener (env, transport) {
-  const listenAddr = multiaddr(getListenAddr(env))
+export function getWebSocketListener (transport, listenAddr) {
   // @ts-expect-error
   const listener = transport.listenerForMultiaddr(listenAddr)
   if (!listener) {
@@ -90,9 +89,9 @@ export function getWebSocketListener (env, transport) {
 }
 
 /**
- * Setup our libp2p websocket listener
- * @param {Env} env
+ * Find our local listener multiaddr
+ * @param {Request} request
  */
-export function getListenAddr (env) {
-  return env.LISTEN_ADDR ?? '/dns4/localhost/tcp/443/wss'
+export function getListenAddr (request) {
+  return toMultiaddr(request.url.replace('http', 'ws'))
 }
