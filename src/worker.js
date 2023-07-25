@@ -39,11 +39,11 @@ export default {
         const libp2p = await getLibp2p(env, transport, listenAddr)
         libp2p.addEventListener('peer:connect', (evt) => {
           const remotePeer = evt.detail
-          console.log(JSON.stringify({ msg: 'peer:connect', peer: remotePeer.toString() }))
+          console.log({ msg: 'peer:connect', peer: remotePeer.toString() })
         })
         libp2p.addEventListener('peer:disconnect', (evt) => {
           const remotePeer = evt.detail
-          console.log(JSON.stringify({ msg: 'peer:disconnect', peer: remotePeer.toString(), ...metrics }))
+          console.log({ msg: 'peer:disconnect', peer: remotePeer.toString(), ...metrics })
         })
         const onError = async (/** @type {Error} */ err) => {
           websocket?.close(418, err.message)
@@ -72,9 +72,7 @@ export default {
         // @ts-expect-error
         websocket.close(418, err.message)
       }
-      console.error('fetch handler error', err)
-      // @ts-expect-error
-      return new Response(err.message ?? err, { status: 500 })
+      throw err
     }
   }
 }
