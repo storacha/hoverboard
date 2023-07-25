@@ -24,6 +24,9 @@ account_id = "fffa4b4363a7e5250af8357087263b3a"
 routes = [
 	{ pattern = "hoverboard-staging.dag.haus", custom_domain = true },
 ]
+tail_consumers = [
+  { service = "loki-staging" }
+]
 
 [env.staging.vars]
 DYNAMO_TABLE = 'staging-ep-v1-blocks-cars-position'
@@ -45,6 +48,9 @@ preview_id = "f4eb0eca32e14e28b643604a82e00cb3"
 account_id = "fffa4b4363a7e5250af8357087263b3a"
 routes = [
 	{ pattern = "hoverboard.dag.haus", custom_domain = true },
+]
+tail_consumers = [
+  { service = "loki-production" }
 ]
 
 [env.production.vars]
