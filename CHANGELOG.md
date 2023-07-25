@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/web3-storage/hoverboard/compare/v1.2.1...v1.3.0) (2023-07-25)
+
+
+### Features
+
+* ship logs to loki ([#17](https://github.com/web3-storage/hoverboard/issues/17)) ([9e106d2](https://github.com/web3-storage/hoverboard/commit/9e106d25c8a50b0cf7df3fd6a4b9ca82758b426b))
+
 ## [1.2.1](https://github.com/web3-storage/hoverboard/compare/v1.2.0...v1.2.1) (2023-07-24)
 
 
