@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*.js", "example/*.js"],
+  "include": ["src", "example"],
   "compilerOptions": {
     "types": ["@cloudflare/workers-types"],
     "declaration": true,
