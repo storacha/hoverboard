@@ -44,10 +44,12 @@
     "@web3-storage/content-claims": "^3.2.1",
     "cf-libp2p-ws-transport": "^1.1.1",
     "events": "^3.3.0",
+    "it-concat": "^3.0.1",
     "libp2p": "^0.45.9",
     "miniswap": "^2.0.1",
     "multiformats": "^12.0.1",
-    "p-defer": "^4.0.0"
+    "p-defer": "^4.0.0",
+    "uint8arrays": "^4.0.9"
   },
   "standard": {
     "ignore": [
