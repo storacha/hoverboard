@@ -37,6 +37,7 @@ export class ContentClaimsReadResponder {
   async respond (request) {
     const { cid } = this
     const claims = await Claims.read(cid, { serviceURL: this.claims })
+    console.debug(`got claims from ${this.claims.toString()}`, claims)
     const collection = {
       name: `claims for ${cid}`,
       totalItems: claims.length

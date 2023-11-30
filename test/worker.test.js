@@ -67,11 +67,12 @@ test('libp2p identify', async t => {
   await t.notThrowsAsync(() => libp2p.services.identify.identify(peer))
 })
 
-test('get /dns/staging.claims.web3.storage/content-claims/{cid}', async t => {
+// @todo - dont actually read from claims.web3.storage - use a mock claims URL
+test('get /dns/claims.web3.storage/content-claims/{cid}', async t => {
   const worker = await createWorker()
   const cid = 'bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4'
-  const resp = await worker.fetch(`/dns/staging.claims.web3.storage/content-claims/${cid}`)
+  const resp = await worker.fetch(`/dns/claims.web3.storage/content-claims/${cid}`)
   t.is(resp.status, 200)
   const claimsCollection = await resp.json()
-  t.is(claimsCollection.totalItems, 0)
+  t.is(claimsCollection.totalItems, 2)
 })
