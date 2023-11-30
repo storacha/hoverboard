@@ -1,3 +1,6 @@
+import * as Claims from '@web3-storage/content-claims/client'
+import { CID } from 'multiformats'
+
 export class ContentClaimsReadResponder {
   /**
    * construct a
@@ -13,25 +16,31 @@ export class ContentClaimsReadResponder {
     console.warn('routing', pathname, match)
     if (!match) return
     const claimsServiceDns = match[1]
-    const cid = match[2]
-    return new ContentClaimsReadResponder(claimsServiceDns, cid)
+    const claimsLocation = new URL(`https://${claimsServiceDns}/`)
+    const cid = CID.parse(match[2])
+    return new ContentClaimsReadResponder(claimsLocation, cid)
   }
 
   /**
-   *
-   * @param {string} contentClaimsDns - dns of content claims service
-   * @param {string} cid - cid to retrieve front content claims service
+   * @param {URL} claims - URL to content claims service
+   * @param {CID} cid - cid to retrieve front content claims service
    */
-  constructor (contentClaimsDns, cid) {
-    this.contentClaimsDns = contentClaimsDns
+  constructor (claims, cid) {
+    this.claims = claims
     this.cid = cid
   }
 
   /**
    * @param {Request} request
-   * @returns {Response}
+   * @returns {Promise<Response>}
    */
-  respond (request) {
-    return new Response('hi ben, responding from ContentClaimsResponder', { status: 200 })
+  async respond (request) {
+    const { cid } = this
+    const claims = await Claims.read(cid, { serviceURL: this.claims })
+    const collection = {
+      name: `claims for ${cid}`,
+      totalItems: claims.length
+    }
+    return new Response(JSON.stringify(collection), { status: 200 })
   }
 }

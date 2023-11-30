@@ -80,6 +80,7 @@ export default {
         // @ts-expect-error
         websocket.close(418, err.message)
       }
+      console.error('unexpected error', err)
       throw err
     }
   }

@@ -69,7 +69,9 @@ test('libp2p identify', async t => {
 
 test('get /dns/staging.claims.web3.storage/content-claims/{cid}', async t => {
   const worker = await createWorker()
-  const web3storageWebsiteCid = 'bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4'
-  const resp = await worker.fetch(`/dns/staging.claims.web3.storage/content-claims/${web3storageWebsiteCid}`)
+  const cid = 'bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4'
+  const resp = await worker.fetch(`/dns/staging.claims.web3.storage/content-claims/${cid}`)
   t.is(resp.status, 200)
+  const claimsCollection = await resp.json()
+  t.is(claimsCollection.totalItems, 0)
 })
