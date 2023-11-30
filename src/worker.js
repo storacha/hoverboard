@@ -4,6 +4,7 @@ import { enableBitswap, getLibp2p, getListenAddr, getPeerId, getWebSocketListene
 import { getBlockstore } from './blocks.js'
 import { version } from '../package.json'
 import { Metrics } from './metrics.js'
+import { ContentClaimsReadResponder } from './content-claims.js'
 
 /**
  * @typedef {object} Env
@@ -61,10 +62,17 @@ export default {
       }
 
       // not a libp2p req. handle as http
+      console.log('log not http')
+      console.info('info not http')
+      console.warn('warn not http')
       const { pathname } = new URL(request.url)
       if (pathname === '' || pathname === '/') {
         const res = await getHome(request, env)
         return res
+      }
+      const contentClaimsResponse = ContentClaimsReadResponder.route(request.url)?.respond(request)
+      if (contentClaimsResponse) {
+        return contentClaimsResponse
       }
       return new Response('Not Found', { status: 404 })
     } catch (err) {

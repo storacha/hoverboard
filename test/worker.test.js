@@ -16,9 +16,12 @@ test.after(_ => {
 
 /**
  * @param {Record<string, string>} env
+ * @param {object} options
+ * @param {"none" | "info" | "error" | "log" | "warn" | "debug"} [options.logLevel]
  */
-async function createWorker (env = {}) {
+async function createWorker (env = {}, { logLevel = process.env.WORKER_TEST_LOG_LEVEL } = {}) {
   const w = await testWorker('src/worker.js', {
+    ...(logLevel ? { logLevel } : {}),
     vars: {
       PEER_ID_JSON: JSON.stringify(peerId),
       ...env
@@ -62,4 +65,11 @@ test('libp2p identify', async t => {
   const peer = await libp2p.dial(peerAddr)
   t.is(peer.remoteAddr.getPeerId().toString(), peerId.id)
   await t.notThrowsAsync(() => libp2p.services.identify.identify(peer))
+})
+
+test('get /dns/staging.claims.web3.storage/content-claims/{cid}', async t => {
+  const worker = await createWorker()
+  const web3storageWebsiteCid = 'bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4'
+  const resp = await worker.fetch(`/dns/staging.claims.web3.storage/content-claims/${web3storageWebsiteCid}`)
+  t.is(resp.status, 200)
 })

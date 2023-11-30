@@ -10,8 +10,8 @@
     "deploy": "wrangler deploy",
     "start": "wrangler dev",
     "lint": "standard",
+    "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
-    "pretest": "standard",
     "test": "c8 ava --serial --no-worker-threads",
     "dial": "node example/dial.js"
   },
