@@ -8,13 +8,15 @@ import { mplex } from '@libp2p/mplex'
 import { createHelia } from 'helia'
 import { unixfs } from '@helia/unixfs'
 import { Builder } from './lib/builder.js'
-import { Blob } from 'node:buffer'
 import { createDynamo, createDynamoTable, createS3, createS3Bucket } from './lib/aws.js'
 import { peerId } from './fixture/peer.js'
 import test from 'ava'
 import { ShardingStream, UnixFS } from '@web3-storage/upload-client'
 import assert from 'node:assert'
 
+/* global Blob, TransformStream, WritableStream */
+
+/** @type {any[]} */
 const workers = []
 
 test.after(_ => {
@@ -22,7 +24,7 @@ test.after(_ => {
 })
 
 /**
- * @param {import('../src/worker.js').Env} env
+ * @param {Partial<import('../src/worker.js').Env>} env
  */
 async function createWorker (env = {}) {
   const w = await testWorker('src/worker.js', {
@@ -37,8 +39,8 @@ async function createWorker (env = {}) {
 
 /**
  * @param {object} worker
- * @param {string} worker.ip
- * @param {number} worker.address
+ * @param {number} worker.port
+ * @param {string} worker.address
  */
 function getListenAddr ({ port, address }) {
   return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${peerId.id}`)
@@ -56,8 +58,9 @@ test('helia bitswap', async t => {
   const { expected, libp2p, helia, heliaFs, hoverboard, root } = await createHeliaBitswapScenario()
 
   console.log(`Dialing ${hoverboard}`)
+
   const peer = await libp2p.dial(hoverboard)
-  t.is(peer.remoteAddr.getPeerId().toString(), peerId.id)
+  t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
 
   const decoder = new TextDecoder('utf8')
   let text = ''
@@ -86,45 +89,63 @@ test.skip('helia bitswap + content-claims', async t => {
 
   // we should be able to use helia.cat(contentA.unixfsLink) and get blocks that come form contentA.unixfsCar
 
-  const contentACat = heliaFs.cat(contentA.unixfsLink)
+  // @ts-expect-error unixfsLink type
+  const contentACat = await concat(heliaFs.cat(contentA.unixfsLink))
   const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
-  console.log('contentACatText', contentACatText)
-  const unixfsText = await (import('uint8arrays').then(m => m.toString(contentA.unixfsCar)))
-  console.log('unixfsText', unixfsText)
+  t.assert(contentACatText)
 })
+
+/** @param {AsyncIterable<Uint8Array>} chunks */
+async function concat (chunks) {
+  let a = new Uint8Array()
+  for await (const chunk of chunks) {
+    a = new Uint8Array([...a, ...chunk])
+  }
+  return a
+}
 
 /**
  * @typedef ClaimableContent
  * @property {ArrayBuffer} buffer
  */
 
-function createMockContentClaims () {
+/**
+ *
+ * @param {Iterable<ClaimableContent>} contents
+ * @returns
+ */
+function createMockContentClaims (contents) {
   const url = process.env.CONTENT_CLAIMS ?? 'https://staging.claims.web3.storage'
   return {
     url
   }
 }
 
+/**
+ * @param {string} text
+ */
 async function createMockClaimableContent (text = (new Date()).toISOString()) {
-  const buffer = (new TextEncoder()).encode(text)
-  /** @type {import('multiformats').UnknownLink?} */
+  const buffer = (new TextEncoder()).encode(text).buffer
+  /** @type {import('multiformats').UnknownLink} */
   let unixfsLink
   /** @type {ArrayBuffer} */
   let unixfsCar
-  await UnixFS.createFileEncoderStream(new Blob(buffer))
-    .pipeThrough(new globalThis.TransformStream({
+  await UnixFS.createFileEncoderStream(new Blob([buffer]))
+    .pipeThrough(new TransformStream({
       transform (block, controller) {
         unixfsLink = block.cid
         controller.enqueue(block)
       }
     }))
     .pipeThrough(new ShardingStream())
-    .pipeTo(new globalThis.WritableStream({
+    .pipeTo(new WritableStream({
       write: async carBuffer => {
         unixfsCar = carBuffer
       }
     }))
+  // @ts-expect-error this should be assigned in practice
   assert.ok(unixfsLink, 'unixfsLink must be a link')
+  // @ts-expect-error this should be assigned in practice
   assert.ok(unixfsCar, 'unixfsCar must be a truthy')
   return { buffer, unixfsLink, unixfsCar }
 }
