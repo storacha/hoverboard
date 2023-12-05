@@ -1,7 +1,6 @@
 import { Map as LinkMap } from 'lnmap'
 import * as Link from 'multiformats/link'
 import { CARWriterStream } from 'carstream/writer'
-import http from 'node:http'
 import { Writable } from 'node:stream'
 import { CARReaderStream } from 'carstream'
 import * as raw from 'multiformats/codecs/raw'
@@ -13,7 +12,7 @@ import * as pb from '@ipld/dag-pb'
 import * as cbor from '@ipld/dag-cbor'
 import * as json from '@ipld/dag-json'
 import { Assert } from '@web3-storage/content-claims/capability'
-import * as ed25519 from '@ucanto/principal/ed25519'
+import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 
 /* global WritableStream */
 /* global ReadableStream */
@@ -82,7 +81,7 @@ export const generateClaims = async (signer, dataCid, carCid, carStream, indexCi
 
   // partition claim for the data CID
   claims.set(dataCid, [
-    await encode(Assert.partition.invoke({
+    await encodeInvocationBlock(Assert.partition.invoke({
       issuer: signer,
       audience: signer,
       with: signer.did(),
@@ -132,13 +131,13 @@ export const generateClaims = async (signer, dataCid, carCid, carStream, indexCi
     })
 
     const blocks = claims.get(cid) ?? []
-    blocks.push(await encode(invocation))
+    blocks.push(await encodeInvocationBlock(invocation))
     claims.set(cid, blocks)
   }
 
   // partition claim for the index
   claims.set(indexCid, [
-    await encode(Assert.partition.invoke({
+    await encodeInvocationBlock(Assert.partition.invoke({
       issuer: signer,
       audience: signer,
       with: signer.did(),
@@ -156,16 +155,82 @@ export const generateClaims = async (signer, dataCid, carCid, carStream, indexCi
  * multicodec code indicating content is a CAR file
  * @see https://github.com/multiformats/multicodec/blob/master/table.csv#L140
  */
-const CAR_MULTICODEC_CODE = 0x0202
+export const CAR_MULTICODEC_CODE = 0x0202
 
 /**
  * Encode a claim to a block.
- * @template {import('@ipld/dag-ucan').Capability} Capability
- * @param {import('@ucanto/interface').IssuedInvocationView<Capability>} invocation
+ * @param {import('@ucanto/interface').IssuedInvocationView} invocation
  */
-const encode = async invocation => {
+export async function encodeInvocationBlock (invocation) {
   const view = await invocation.buildIPLDView()
   const bytes = await view.archive()
   if (bytes.error) throw new Error('failed to archive')
   return { cid: Link.create(CAR_MULTICODEC_CODE, await sha256.digest(bytes.ok)), bytes: bytes.ok }
+}
+/**
+ * @param {string} input - text input to use as the sample content that will be encoded into a car file
+ * @param {object} options
+ * @param {import('@ucanto/interface').Signer} [options.signer]
+ */
+export async function createSimpleContentClaimsScenario (input, options = {}) {
+  const {
+    signer = await Ed25519Signer.generate()
+  } = options
+
+  const inputBuffer = (new TextEncoder()).encode(input)
+  const inputBlock = await Block.encode({ value: inputBuffer, codec: raw, hasher: sha256 })
+  const inputCID = await inputBlock.cid
+  const createInputBlockStream = () => {
+    /** @type {ReadableStream<import('carstream/api').Block>} */
+    const blocks = new ReadableStream({
+      start (controller) {
+        /** @type {import('carstream/api').Block} */
+        const block = {
+          cid: inputBlock.cid,
+          bytes: inputBlock.bytes
+        }
+        controller.enqueue(block)
+        controller.close()
+      }
+    })
+    return blocks
+  }
+  const createCarBlob = () => new Response(createInputBlockStream().pipeThrough(new CARWriterStream([inputBlock.cid]))).blob()
+
+  const car = await createCarBlob()
+
+  const carBytes = new Uint8Array(await car.arrayBuffer())
+  const carDataUri = /** @type {`data:${string}`} */(`data:application/vnd.ipld.car;base64,${btoa(String.fromCharCode.apply(null, Array.from(carBytes)))}`)
+  /** @type {import('cardex/api.js').CARLink} */
+  const carLink = Link.create(CAR_MULTICODEC_CODE, await sha256.digest(new Uint8Array(await car.arrayBuffer())))
+
+  // make a mock location claim
+  // that cid for input can be found at a url
+  const claims = await Promise.resolve(new LinkMap()).then(async claims => {
+    const locationClaim = Assert.location.invoke({
+      issuer: signer,
+      audience: signer,
+      with: signer.did(),
+      nb: {
+        content: inputCID,
+        location: [carDataUri]
+      }
+    })
+
+    claims.set(inputCID, [
+      await encodeInvocationBlock(locationClaim)
+    ])
+    // @todo build other kinds of claims e.g. assert/relation
+    // e.g. in the wild '[{"content":{"/":"bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4"},"location":["https://dotstorage-prod-1.s3.amazonaws.com/raw/bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4/308707845265687115/ciqcoeewnamafntujapktkuekgfroq7tgapvehgxrg5mzyn4tdbh75y.car"],"type":"assert/location"},{"parts":[{"content":{"/":"bagbaierae4ijm2ayak3hisa6vgviiumlc5b7gma7kionpcn2ztq3zggcp73q"},"includes":{"content":{"/":"bagaqqeraqqipfw4sjfwsu5s3eykpcof2omov2v6vdg6gn7765wqo4sdjr7bq"}}}],"content":{"/":"bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4"},"children":[],"type":"assert/relation"}]'
+    return claims
+  })
+
+  return {
+    inputCID,
+    inputBlock,
+    car,
+    carLink,
+    claims,
+    signer
+  }
 }

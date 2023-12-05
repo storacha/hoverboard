@@ -9,7 +9,13 @@ import { peerId } from './fixture/peer.js'
 import test from 'ava'
 import * as http from 'node:http'
 import { hasOwnProperty } from '../src/utils/object.js'
-import { mockClaimsService } from './lib/content-claims-nodejs.js'
+import { createSimpleContentClaimsScenario, mockClaimsService } from './lib/content-claims-nodejs.js'
+import assert from 'node:assert'
+import { CARReaderStream } from 'carstream'
+import { sha256 } from 'multiformats/hashes/sha2'
+import * as bytes from 'multiformats/bytes'
+
+/* global WritableStream */
 
 /** @type {any[]} */
 const workers = []
@@ -102,20 +108,45 @@ test('get /dns/claims.web3.storage/content-claims/{cid}', async t => {
 })
 
 test('get content claims from mocked content-claims', async t => {
-  const cid = 'bafybeidtvuezudgvdciehupi2nlduu5t2r6nkb7o3brwqhdrig6jfc2gd4'
-  const claimsMock = await mockClaimsService()
+  const testInput = `test-${Math.random().toString().slice(2)}`
+  const { claims, inputCID } = await (createSimpleContentClaimsScenario(testInput))
+  const claimsMock = await mockClaimsService(await claims)
   const claimsServer = await listen(claimsMock)
   /** @param {URL} url */
   const useClaimsServer = async (url) => {
     const worker = await createWorker()
-    const query = { about: cid, source: claimsServer.url.toString() }
-    const claimsUrl = new URL(`/claims/?${new URLSearchParams(query).toString()}`, claimsServer.url)
-    const response = await worker.fetch(claimsUrl)
+
+    // query for cid and expect no claims
+    const query = { about: inputCID.toString(), source: claimsServer.url.toString() }
+    const response = await worker.fetch(new URL(`/claims/?${new URLSearchParams(query).toString()}`, claimsServer.url))
     t.is(response.status, 200)
     const claimsCollection = /** @type {any} */ (await response.json())
-    t.is(claimsCollection.totalItems, 0)
+    t.is(claimsCollection.totalItems, 1)
 
-    // @todo now get real claims
+    const locationClaim = claimsCollection.items.find((/** @type {{ type: string; }} */ item) => item.type === 'assert/location')
+    const locations = Array.isArray(locationClaim.location) ? locationClaim.location : [locationClaim.location]
+    // one location (based on createSimpleContentClaimsScenario setup)
+    t.is(locations.length, 1)
+    const location = locations[0]
+    assert.ok(typeof location === 'string')
+
+    // fetch the location, expect it to be a car file
+    const locationResponse = await fetch(location)
+    t.is(locationResponse.headers.get('content-type'), 'application/vnd.ipld.car')
+
+    /** @type {Array<import('carstream/api').Block>} */
+    const blocksFromLocation = []
+    await locationResponse.body?.pipeThrough(new CARReaderStream()).pipeTo(new WritableStream({
+      async write (block) {
+        blocksFromLocation.push(block)
+        const digest = await sha256.digest(block.bytes)
+        if (!bytes.equals(block.cid.multihash.bytes, digest.bytes)) {
+          throw new Error(`hash verification failed: ${block.cid}`)
+        }
+      }
+    }))
+    t.is(blocksFromLocation.length, 1, 'car fetched from location has one block')
+    t.is(blocksFromLocation[0].cid.toString(), inputCID.toString(), 'car at location block has inputCID')
   }
   try {
     await useClaimsServer(claimsServer.url)
@@ -152,4 +183,15 @@ function getServerUrl (server) {
   const address = server.address()
   if (typeof address !== 'object') { throw new Error(`unexpected non-object address ${address}`) }
   return new URL(`http://localhost:${address?.port}`)
+}
+
+/**
+ * @template T
+ * @param {AsyncIterable<T>} collectable
+ */
+export async function collect (collectable) {
+  /** @type {T[]} */
+  const items = []
+  for await (const item of collectable) { items.push(item) }
+  return items
 }

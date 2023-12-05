@@ -28,6 +28,7 @@ test.after(_ => {
  */
 async function createWorker (env = {}) {
   const w = await testWorker('src/worker.js', {
+    // @ts-ignore
     vars: env,
     experimental: {
       disableExperimentalWarning: true

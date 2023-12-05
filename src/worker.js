@@ -62,15 +62,12 @@ export default {
       }
 
       // not a libp2p req. handle as http
-      console.log('log not http')
-      console.info('info not http')
-      console.warn('warn not http')
       const { pathname } = new URL(request.url)
       if (pathname === '' || pathname === '/') {
         const res = await getHome(request, env)
         return res
       }
-      const contentClaimsResponse = ContentClaimsReadResponder.route(request.url)?.respond(request)
+      const contentClaimsResponse = await ContentClaimsReadResponder.route(request.url)?.respond(request)
       if (contentClaimsResponse) {
         return contentClaimsResponse
       }

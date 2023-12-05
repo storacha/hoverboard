@@ -58,7 +58,8 @@ export class ContentClaimsReadResponder {
     const claims = await Claims.read(cid, { serviceURL: this.claims })
     const collection = {
       name: `claims for ${cid}`,
-      totalItems: claims.length
+      totalItems: claims.length,
+      items: claims
     }
     return new Response(JSON.stringify(collection), { status: 200 })
   }
