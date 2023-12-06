@@ -13,6 +13,7 @@ import * as cbor from '@ipld/dag-cbor'
 import * as json from '@ipld/dag-json'
 import { Assert } from '@web3-storage/content-claims/capability'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
+import * as http from 'node:http'
 
 /* global WritableStream */
 /* global ReadableStream */
@@ -26,9 +27,8 @@ import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 
 /**
  * @param {Claims} claims
- * @returns
  */
-export const mockClaimsService = async (
+export const mockClaimsService = (
   claims = new LinkMap()
 ) => {
   /** @param {Claims} s */
@@ -167,6 +167,7 @@ export async function encodeInvocationBlock (invocation) {
   if (bytes.error) throw new Error('failed to archive')
   return { cid: Link.create(CAR_MULTICODEC_CODE, await sha256.digest(bytes.ok)), bytes: bytes.ok }
 }
+
 /**
  * @param {string} input - text input to use as the sample content that will be encoded into a car file
  * @param {object} options
@@ -233,4 +234,45 @@ export async function createSimpleContentClaimsScenario (input, options = {}) {
     claims,
     signer
   }
+}
+
+/**
+ * start listening to a node http request listener.
+ * return a URL to the listening server, and a function that will stop listening
+ * @param {object} options
+ * @param {import('http').RequestListener} options.listener
+ * @param {number} port
+ */
+export async function listen ({ listener }, port = 0) {
+  const server = http.createServer(listener)
+  await new Promise((resolve) => server.listen(port, () => resolve(undefined)))
+  const url = getServerUrl(server)
+  const stop = () => {
+    server.closeAllConnections()
+    return new Promise((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve(error))
+    })
+  }
+  return { url, stop }
+}
+
+/**
+ * @param {import('node:http').Server} server
+ * @returns URL
+ */
+function getServerUrl (server) {
+  const address = server.address()
+  if (typeof address !== 'object') { throw new Error(`unexpected non-object address ${address}`) }
+  return new URL(`http://localhost:${address?.port}`)
+}
+
+/**
+ * @template T
+ * @param {AsyncIterable<T>} collectable
+ */
+export async function collect (collectable) {
+  /** @type {T[]} */
+  const items = []
+  for await (const item of collectable) { items.push(item) }
+  return items
 }

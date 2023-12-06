@@ -7,9 +7,8 @@ import { createLibp2p } from 'libp2p'
 import { mplex } from '@libp2p/mplex'
 import { peerId } from './fixture/peer.js'
 import test from 'ava'
-import * as http from 'node:http'
 import { hasOwnProperty } from '../src/utils/object.js'
-import { createSimpleContentClaimsScenario, mockClaimsService } from './lib/content-claims-nodejs.js'
+import { createSimpleContentClaimsScenario, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
 import assert from 'node:assert'
 import { CARReaderStream } from 'carstream'
 import { sha256 } from 'multiformats/hashes/sha2'
@@ -105,12 +104,13 @@ test('get /dns/claims.web3.storage/content-claims/{cid}', async t => {
     throw t.fail('claimsCollection should be an object')
   }
   t.is(hasOwnProperty(claimsCollection, 'totalItems') && claimsCollection.totalItems, 2)
+  console.warn('claimsCollection', JSON.stringify(claimsCollection, undefined, 2))
 })
 
 test('get content claims from mocked content-claims', async t => {
   const testInput = `test-${Math.random().toString().slice(2)}`
   const { claims, inputCID } = await (createSimpleContentClaimsScenario(testInput))
-  const claimsMock = await mockClaimsService(await claims)
+  const claimsMock = mockClaimsService(await claims)
   const claimsServer = await listen(claimsMock)
   /** @param {URL} url */
   const useClaimsServer = async (url) => {
@@ -122,6 +122,7 @@ test('get content claims from mocked content-claims', async t => {
     t.is(response.status, 200)
     const claimsCollection = /** @type {any} */ (await response.json())
     t.is(claimsCollection.totalItems, 1)
+    console.warn('claimsCollection', JSON.stringify(claimsCollection))
 
     const locationClaim = claimsCollection.items.find((/** @type {{ type: string; }} */ item) => item.type === 'assert/location')
     const locations = Array.isArray(locationClaim.location) ? locationClaim.location : [locationClaim.location]
@@ -154,44 +155,3 @@ test('get content claims from mocked content-claims', async t => {
     await claimsServer.stop()
   }
 })
-
-/**
- * start listening to a node http request listener.
- * return a URL to the listening server, and a function that will stop listening
- * @param {object} options
- * @param {import('http').RequestListener} options.listener
- * @param {number} port
- */
-async function listen ({ listener }, port = 0) {
-  const server = http.createServer(listener)
-  await new Promise((resolve) => server.listen(port, () => resolve(undefined)))
-  const url = getServerUrl(server)
-  const stop = () => {
-    server.closeAllConnections()
-    return new Promise((resolve, reject) => {
-      server.close((error) => error ? reject(error) : resolve(error))
-    })
-  }
-  return { url, stop }
-}
-
-/**
- * @param {import('node:http').Server} server
- * @returns URL
- */
-function getServerUrl (server) {
-  const address = server.address()
-  if (typeof address !== 'object') { throw new Error(`unexpected non-object address ${address}`) }
-  return new URL(`http://localhost:${address?.port}`)
-}
-
-/**
- * @template T
- * @param {AsyncIterable<T>} collectable
- */
-export async function collect (collectable) {
-  /** @type {T[]} */
-  const items = []
-  for await (const item of collectable) { items.push(item) }
-  return items
-}
