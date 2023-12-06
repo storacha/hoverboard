@@ -19,6 +19,8 @@ test('ContentClaimsBlockstore can get block from location claim data URL', async
     const blocks = new ContentClaimsBlockstore({ url, read: Claims.read })
     t.assert(await blocks.has(inputCID), '.has(inputCID)')
     const block = await blocks.get(inputCID)
-    console.log('got block', block)
+    t.assert(block, 'got block')
+    const decodedBlock = (new TextDecoder()).decode(block)
+    t.is(decodedBlock, testInput)
   }
 })

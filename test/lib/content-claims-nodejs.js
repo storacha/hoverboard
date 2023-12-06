@@ -39,7 +39,7 @@ export const mockClaimsService = (
    */
   const listener = async (req, res) => {
     const content = Link.parse(String(req.url?.split('/')[2]))
-    const blocks = claims.get(content) ?? []
+    const blocks = [...claims.get(content) ?? []]
     const readable = new ReadableStream({
       pull (controller) {
         const block = blocks.shift()
