@@ -146,7 +146,10 @@ async function claimsGetBlock (read, link, serviceURL) {
       /** @param {[claim: import('@web3-storage/content-claims/client/api').LocationClaim, location: string, response: Response]} chunk */
       async transform ([claim, location, response], controller) {
         await response.body?.pipeThrough(new CARReaderStream()).pipeTo(new WritableStream({
-          write: (block) => controller.enqueue({ claim, location, response, block })
+          write: (block) => {
+            // @todo validate that block.bytes hashes to `link`
+            controller.enqueue({ claim, location, response, block })
+          }
         }))
       }
     }))
