@@ -14,9 +14,16 @@ import * as json from '@ipld/dag-json'
 import { Assert } from '@web3-storage/content-claims/capability'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as http from 'node:http'
+import { concat } from 'uint8arrays'
+import { CarIndexer } from '@ipld/car'
+import * as CAR from "./car.js"
+import { encodeVarint } from 'cardex/encoder'
+import { MultiIndexWriter } from 'cardex/multi-index'
 
 /* global WritableStream */
 /* global ReadableStream */
+
+const MULTIHASH_INDEX_SORTED_CODE = 0x0401
 
 /**
  * @typedef {import('carstream/api').Block & { children: import('multiformats').UnknownLink[] }} RelationIndexData
@@ -152,12 +159,6 @@ export const generateClaims = async (signer, dataCid, carCid, carStream, indexCi
 }
 
 /**
- * multicodec code indicating content is a CAR file
- * @see https://github.com/multiformats/multicodec/blob/master/table.csv#L140
- */
-export const CAR_MULTICODEC_CODE = 0x0202
-
-/**
  * Encode a claim to a block.
  * @param {import('@ucanto/interface').IssuedInvocationView} invocation
  */
@@ -165,7 +166,7 @@ export async function encodeInvocationBlock (invocation) {
   const view = await invocation.buildIPLDView()
   const bytes = await view.archive()
   if (bytes.error) throw new Error('failed to archive')
-  return { cid: Link.create(CAR_MULTICODEC_CODE, await sha256.digest(bytes.ok)), bytes: bytes.ok }
+  return { cid: Link.create(CAR.code, await sha256.digest(bytes.ok)), bytes: bytes.ok }
 }
 
 /**
@@ -203,7 +204,7 @@ export async function createSimpleContentClaimsScenario (input, options = {}) {
   const carBytes = new Uint8Array(await car.arrayBuffer())
   const carDataUri = /** @type {`data:${string}`} */(`data:application/vnd.ipld.car;base64,${btoa(String.fromCharCode.apply(null, Array.from(carBytes)))}`)
   /** @type {import('cardex/api.js').CARLink} */
-  const carLink = Link.create(CAR_MULTICODEC_CODE, await sha256.digest(new Uint8Array(await car.arrayBuffer())))
+  const carLink = Link.create(CAR.code, await sha256.digest(new Uint8Array(await car.arrayBuffer())))
 
   // make a mock location claim
   // that cid for input can be found at a url
@@ -226,13 +227,16 @@ export async function createSimpleContentClaimsScenario (input, options = {}) {
     return claims
   })
 
+  const sharded = await shardCar({ car, carLink: Promise.resolve(carLink) })
+
   return {
     inputCID,
     inputBlock,
     car,
     carLink,
     claims,
-    signer
+    signer,
+    sharded,
   }
 }
 
@@ -275,4 +279,137 @@ export async function collect (collectable) {
   const items = []
   for await (const item of collectable) { items.push(item) }
   return items
+}
+
+import { TreewalkCarSplitter } from 'carbites/treewalk'
+const DEFAULT_SHARD_SIZE = 1024 * 1024 * 10 // chunk to ~10MB CARs
+import { MultihashIndexSortedWriter } from 'cardex'
+import { CID } from 'multiformats'
+
+/**
+ * @todo don't use UnknownLink
+ * @typedef {LinkMap<import('@ucanto/interface').UnknownLink, Promise<ArrayBuffer>>} ShardLinkToShardBytesMap
+ */
+
+/**
+ * Shard a CAR File and return the shards + index
+ * @param {object} options
+ * @param {Blob} options.car
+ * @param {Promise<import('cardex/api').CARLink>} options.carLink
+ * @param {number} [options.shardSize]
+ * @param {ShardLinkToShardBytesMap} [options.shards]
+ * @param {Map<string, Uint8Array>} [options.dudewhere]
+ * @param {Map<string, Uint8Array>} [options.carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Map<string, Uint8Array>} [options.satnav]
+ * @param {LinkMap<import('multiformats').Link<unknown,number,number,1>, Promise<Uint8Array>>} [options.indexes]
+ * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} [options.indexCars]
+ * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} [options.cars]
+ * @param {Array<{ shard: import('multiformats').UnknownLink, index: import('multiformats').UnknownLink }>} [options.shardOrder]
+ */
+async function shardCar({
+  car,
+  carLink = Promise.resolve().then(async () => Link.create(CAR.code, await sha256.digest(new Uint8Array(await car.arrayBuffer())))),
+  cars = new LinkMap,
+  carpark = new Map,
+  dudewhere = new Map,
+  indexes = new LinkMap,
+  indexCars = new LinkMap,
+  satnav = new Map,
+  shards = new LinkMap,
+  shardSize = DEFAULT_SHARD_SIZE,
+  shardOrder = [],
+}) {
+  // shard the car
+  const splitter = await TreewalkCarSplitter.fromIterable(car.stream(), shardSize)
+  for await (const shardCar of splitter.cars()) {
+    const shardCarBytes = collect(shardCar).then(concat)
+    const shardCarCid = Link.create(CAR.code, await sha256.digest(await shardCarBytes))
+    cars.set(shardCarCid, shardCarBytes)
+    shards.set(shardCarCid, shardCarBytes)
+    // park the car in carpark at conventional key
+    carpark.set(`${shardCarCid}/${shardCarCid}.car`, await shardCarBytes)
+    // create index for shard
+    const indexer = await CarIndexer.fromBytes(await shardCarBytes)
+    const index = await createIndexStream(indexer)
+    const indexBytes = (new Response(index)).blob().then(async b => new Uint8Array(await b.arrayBuffer()))
+    const indexLink = Link.create(MULTIHASH_INDEX_SORTED_CODE, await sha256.digest(await indexBytes))
+    indexes.set(indexLink, indexBytes)
+    const indexCar = await CAR.encode(indexLink, [{ cid: indexLink, bytes: await indexBytes }])
+    indexCars.set(indexLink, Promise.resolve(indexCar.bytes))
+    cars.set(indexLink, Promise.resolve(indexCar.bytes))
+    // add shard index to satnav at conventional key
+    satnav.set(`${shardCarCid}/${shardCarCid}.car.idx`, await indexBytes)
+    // add shard index *car* to carpark
+    carpark.set(`${indexCar.cid}/${indexCar.cid}.car`, indexCar.bytes)
+    shardOrder.push({
+      shard: shardCarCid,
+      index: indexLink,
+    })
+  }
+  for (const cid of cars) {
+    dudewhere.set(`${carLink}/${cid}.car`, new Uint8Array)
+  }
+  const indexRollupBytes = (new Response(createIndexRollupStream({cars, satnav}))).blob().then(async b => new Uint8Array(await b.arrayBuffer()))
+  dudewhere.set(`${carLink}/.rollup.idx`, await indexRollupBytes)
+  return {
+    carLink,
+    cars,
+    carpark,
+    dudewhere,
+    indexes,
+    satnav,
+    indexRollupBytes,
+    indexCars,
+  }
+}
+
+/**
+ * @param {object} options
+ * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} options.cars
+ * @param {Map<string, Uint8Array>} [options.satnav]
+ */
+function createIndexRollupStream({
+  cars,
+  satnav,
+}) {
+  const carCids = [...cars.keys()]
+  const rollupGenerator = async function * () {
+    yield encodeVarint(MultiIndexWriter.codec)
+    yield encodeVarint(carCids.length)
+    for (const origin of carCids) {
+      yield origin.multihash.bytes
+      if (satnav) {
+        const carIdx = satnav.get(`${origin}/${origin}.car.idx`)
+        if (!carIdx) throw new Error(`missing index: ${origin}`)
+      }
+      if (!cars.has(origin)) throw new Error(`missing index: ${origin}`)
+      const originCar = await cars.get(origin)
+      yield originCar
+    }
+  }
+  const iterator = rollupGenerator()
+  const readable = new ReadableStream({
+    async pull(controller) {
+      const { value, done } = await iterator.next()
+      if (done) {
+        controller.close()
+      } else {
+        controller.enqueue(value)
+      }
+    }
+  })
+  return readable
+}
+
+/**
+ * @param {CarIndexer} indexer
+ */
+async function createIndexStream(indexer) {
+  const passthru = new TransformStream()
+  const indexWriter = MultihashIndexSortedWriter.createWriter({ writer: passthru.writable.getWriter() })
+  for await (const { cid, offset } of indexer) {
+    indexWriter.add(cid, offset)
+  }
+  await indexWriter.close()
+  return passthru.readable
 }
