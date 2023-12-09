@@ -1,4 +1,5 @@
 import { CARReaderStream } from 'carstream/reader'
+import * as CAR from './car.js'
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -51,14 +52,19 @@ export class ContentClaimsBlockstore {
   #read
   /** @type {URL|undefined} */
   #url
+  /** @type {Map<string, Uint8Array>}  */
+  #carpark
+
   /**
    * @param {object} options
    * @param {AbstractClaimsClient['read']} options.read
+   * @param {Map<string, Uint8Array>} [options.carpark] - keys like `${cid}/${cid}.car` and values are car bytes
    * @param {URL} [options.url]
    */
-  constructor ({ read, url }) {
+  constructor ({ read, url, carpark = new Map() }) {
     this.#read = read
     this.#url = url
+    this.#carpark = carpark
   }
 
   /**
@@ -72,7 +78,7 @@ export class ContentClaimsBlockstore {
    * @param {UnknownLink} link
    */
   async get (link) {
-    return claimsGetBlock(this.#read, link, this.#url)
+    return claimsGetBlock(this.#read, link, this.#url, this.#carpark)
   }
 }
 
@@ -96,20 +102,53 @@ async function claimsHas (
  * @param {AbstractClaimsClient['read']} read
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {URL} [serviceURL] - url to claims service to read from
+ * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
  * @returns {Promise<Uint8Array|undefined>}
  */
-async function claimsGetBlock (read, link, serviceURL) {
+async function claimsGetBlock (read, link, serviceURL, carpark = new Map()) {
   const claims = await read(link, { serviceURL })
   /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
   const locationClaims = []
+  /** @type {import('@web3-storage/content-claims/client/api').RelationClaim[]} */
+  const relationClaims = []
   for (const claim of claims) {
     switch (claim.type) {
       case 'assert/location':
         locationClaims.push(claim)
         break
+      case 'assert/relation':
+        relationClaims.push(claim)
+        break
       default:
         console.warn('unexpected claim type. skipping.', claim.type, claim)
         break
+    }
+  }
+  for (const relationClaim of relationClaims) {
+    // export the blocks from the claim - may include the CARv2 indexes
+    const blocks = [...relationClaim.export()]
+
+    // each part is a tuple of CAR CID (content) & CARv2 index CID (includes)
+    for (const { content, includes } of relationClaim.parts) {
+      if (content.code !== CAR.code) continue
+      if (!includes) continue
+
+      /** @type {{ cid: import('multiformats').UnknownLink, bytes: Uint8Array }|undefined} */
+      let block = blocks.find(b => b.cid.toString() === includes.content.toString())
+
+      console.log('claimsGetBlock first', block, includes.parts)
+      // if the index is not included in the claim, it should be in CARPARK
+      if (!block && includes.parts?.length) {
+        console.log('looking in carpark for', includes.parts[0], carpark)
+        const obj = await carpark.get(`${includes.parts[0]}/${includes.parts[0]}.car`)
+        if (!obj) continue
+        const blocks = await CAR.decode(obj)
+        block = blocks.find(b => b.cid.toString() === includes.content.toString())
+      }
+      console.log('relation got block', block)
+      if (block) {
+        return block.bytes
+      }
     }
   }
   /**

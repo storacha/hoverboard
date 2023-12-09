@@ -4,7 +4,7 @@ import { ContentClaimsBlockstore } from '../src/content-claims-blockstore.js'
 import * as Claims from '@web3-storage/content-claims/client'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as Link from 'multiformats/link'
-import * as CAR from './lib/car.js'
+import * as CAR from '../src/car.js'
 import { sha256 } from 'multiformats/hashes/sha2'
 import assert from 'assert'
 
@@ -56,10 +56,12 @@ test('ContentClaimsBlockStore can get block from relation claim', async t => {
    * @param {{ url: URL }} options
    */
   async function useClaimsServer ({ url }) {
-    const blocks = new ContentClaimsBlockstore({ url, read: Claims.read })
+    const blocks = new ContentClaimsBlockstore({ url, read: Claims.read, carpark: scenario.sharded.carpark })
     t.assert(await blocks.has(scenario.inputCID), '.has(inputCID)')
+    console.log('getting cid', scenario.inputCID)
     const block = await blocks.get(scenario.inputCID)
     t.assert(block, 'got block')
+    console.log('block', block)
     const decodedBlock = (new TextDecoder()).decode(block)
     t.is(decodedBlock, testInput)
   }

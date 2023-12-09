@@ -16,7 +16,7 @@ import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as http from 'node:http'
 import { concat } from 'uint8arrays'
 import { CarIndexer } from '@ipld/car'
-import * as CAR from './car.js'
+import * as CAR from '../../src/car.js'
 import { encodeVarint } from 'cardex/encoder'
 import { MultiIndexWriter } from 'cardex/multi-index'
 import { TreewalkCarSplitter } from 'carbites/treewalk' // chunk to ~10MB CARs
