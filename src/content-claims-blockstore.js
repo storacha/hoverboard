@@ -1,5 +1,11 @@
 import { CARReaderStream } from 'carstream/reader'
 import * as CAR from './car.js'
+import { MultihashIndexSortedReader } from 'cardex/multihash-index-sorted'
+import assert from 'assert'
+import { CID } from 'multiformats'
+import * as Link from 'multiformats/link'
+import * as raw from 'multiformats/codecs/raw'
+// import * as freewayBlockstore from 'freeway/blockstore'
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -103,9 +109,10 @@ async function claimsHas (
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {URL} [serviceURL] - url to claims service to read from
  * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Map<UnknownLink, IndexEntry>} [index] - map of
  * @returns {Promise<Uint8Array|undefined>}
  */
-async function claimsGetBlock (read, link, serviceURL, carpark = new Map()) {
+async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), index = new Map()) {
   const claims = await read(link, { serviceURL })
   /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
   const locationClaims = []
@@ -114,9 +121,11 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map()) {
   for (const claim of claims) {
     switch (claim.type) {
       case 'assert/location':
+        // @ts-ignore
         locationClaims.push(claim)
         break
       case 'assert/relation':
+        // @ts-ignore
         relationClaims.push(claim)
         break
       default:
@@ -124,32 +133,75 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map()) {
         break
     }
   }
+  console.debug('WANT', link)
   for (const relationClaim of relationClaims) {
+    console.debug('relationClaim', JSON.stringify(relationClaim, undefined, 2))
+
     // export the blocks from the claim - may include the CARv2 indexes
     const blocks = [...relationClaim.export()]
+
+    const relationClaimPartBlocks = []
 
     // each part is a tuple of CAR CID (content) & CARv2 index CID (includes)
     for (const { content, includes } of relationClaim.parts) {
       if (content.code !== CAR.code) continue
       if (!includes) continue
 
-      /** @type {{ cid: import('multiformats').UnknownLink, bytes: Uint8Array }|undefined} */
-      let block = blocks.find(b => b.cid.toString() === includes.content.toString())
+      assert.ok(includes.content.code === MultihashIndexSortedReader.codec, 'relationClaim.includes is link to car-multihash-index-sorted')
 
-      console.log('claimsGetBlock first', block, includes.parts)
+      /** @type {{ cid: import('multiformats').UnknownLink, bytes: Uint8Array }|undefined} */
+      let blockForIncludes = blocks.find(b => b.cid.equals(includes.content))
+
       // if the index is not included in the claim, it should be in CARPARK
-      if (!block && includes.parts?.length) {
-        console.log('looking in carpark for', includes.parts[0], carpark)
-        const obj = await carpark.get(`${includes.parts[0]}/${includes.parts[0]}.car`)
-        if (!obj) continue
-        const blocks = await CAR.decode(obj)
-        block = blocks.find(b => b.cid.toString() === includes.content.toString())
+      if (!blockForIncludes && includes.parts?.length) {
+        const includeParts = []
+        for (const part of includes.parts) {
+          // part is a CARLink to a car-multihash-index-sorted
+
+          console.log('looking in carpark for part', part)
+          const partCarParkPath = `${part}/${part}.car`
+          const obj = await carpark.get(partCarParkPath)
+          if (!obj) continue
+          const partBlocks = await CAR.decode(obj)
+          includeParts.push(...partBlocks)
+          // console.debug('decoded part car to partBlocks', partBlocks)
+          // console.debug('all parts should come to', content, includes.parts)
+          // console.debug('all blocks', blocks)
+          blockForIncludes = blockForIncludes ?? partBlocks.find(b => b.cid.equals(includes.content))
+          console.debug('end part loop', {
+            part,
+            blockForIncludes,
+            partBlocks,
+            includeParts
+          })
+          if (blockForIncludes) {
+            console.debug('got blockForIncludes. skipping further includes.parts')
+            break
+          }
+        }
       }
-      console.log('relation got block', block)
-      if (block) {
-        return block.bytes
+
+      if (blockForIncludes) {
+        console.debug('blockForIncludes', blockForIncludes)
+        assert.ok(blockForIncludes.cid.code === MultihashIndexSortedReader.codec)
+        const cidV1 = CID.create(1, MultihashIndexSortedReader.codec, blockForIncludes.cid.multihash)
+        assert.ok(cidV1.code === MultihashIndexSortedReader.codec)
+        const includesContentCidCode = content.code
+        assert.ok(includesContentCidCode === CAR.code, 'includesContentCidCode in CAR.code')
+        const includesContentCidV1 = CID.create(1, includesContentCidCode, content.multihash)
+        const entries = await decodeRelationIncludesIndex(includesContentCidV1, blockForIncludes.bytes)
+        for (const entry of entries) {
+          const entryIndexKey = Link.create(raw.code, entry.multihash)
+          console.debug('got entry from index. setting key in index', [entryIndexKey, entry])
+          index.set(entryIndexKey, entry)
+        }
+        relationClaimPartBlocks.push(blockForIncludes)
       }
+      // const indexedBlocks = new IndexedCarParkBlocks(index, carpark)
+      // const b1 = indexedBlocks.get()
     }
+
+    console.debug('relationClaimPartBlocks', relationClaimPartBlocks)
   }
   /**
    * @type {ReadableStream<{
@@ -209,4 +261,32 @@ function createReadableStream (source) {
       controller.close()
     }
   })
+}
+
+/**
+ * @typedef {import('./api.js').IndexEntry} IndexEntry
+ * @typedef {import('./api.js').Index} Index
+ */
+
+/**
+ * Read a MultihashIndexSorted index for the passed origin CAR and return a
+ * list of IndexEntry.
+ * @param {import('cardex/api').CARLink} origin
+ * @param {Uint8Array} bytes
+ */
+const decodeRelationIncludesIndex = async (origin, bytes) => {
+  const entries = []
+  const readable = new ReadableStream({
+    pull (controller) {
+      controller.enqueue(bytes)
+      controller.close()
+    }
+  })
+  const reader = MultihashIndexSortedReader.createReader({ reader: readable.getReader() })
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    entries.push(/** @type {IndexEntry} */({ origin, ...value }))
+  }
+  return entries
 }

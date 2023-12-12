@@ -24,6 +24,7 @@ import { MultihashIndexSortedWriter } from 'cardex'
 
 /* global WritableStream */
 /* global ReadableStream */
+/* global TransformStream */
 
 const MULTIHASH_INDEX_SORTED_CODE = 0x0401
 
@@ -205,7 +206,7 @@ export async function createSimpleContentClaimsScenario (input, options = {}) {
 
   const carBytes = new Uint8Array(await car.arrayBuffer())
   const carDataUri = /** @type {`data:${string}`} */(`data:application/vnd.ipld.car;base64,${btoa(String.fromCharCode.apply(null, Array.from(carBytes)))}`)
-  /** @type {import('cardex/api.js').CARLink} */
+  /** @type {import('cardex/api').CARLink} */
   const carLink = Link.create(CAR.code, await sha256.digest(new Uint8Array(await car.arrayBuffer())))
 
   // make a mock location claim

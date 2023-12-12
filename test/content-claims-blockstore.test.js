@@ -31,7 +31,7 @@ test('ContentClaimsBlockstore can get block from location claim data URL', async
 })
 
 test('ContentClaimsBlockStore can get block from relation claim', async t => {
-  const testInput = `test-${Math.random().toString().slice(2)}`
+  const testInput = 'test-42'
   const scenario = await createSimpleContentClaimsScenario(testInput)
   const claimsIssuer = await Ed25519Signer.generate()
   const firstIndex = [...scenario.sharded.indexes.entries()][0]
@@ -60,8 +60,8 @@ test('ContentClaimsBlockStore can get block from relation claim', async t => {
     t.assert(await blocks.has(scenario.inputCID), '.has(inputCID)')
     console.log('getting cid', scenario.inputCID)
     const block = await blocks.get(scenario.inputCID)
-    t.assert(block, 'got block')
     console.log('block', block)
+    t.assert(block, 'got block')
     const decodedBlock = (new TextDecoder()).decode(block)
     t.is(decodedBlock, testInput)
   }

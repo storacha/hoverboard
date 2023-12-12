@@ -56,7 +56,6 @@ export default {
         enableBitswap(libp2p, bs, onError)
         const listener = getWebSocketListener(transport, listenAddr)
         const res = await listener.handleRequest(request)
-        // @ts-expect-error res will have a raw websocket server on it if worked.
         websocket = res.websocket
         return res
       }

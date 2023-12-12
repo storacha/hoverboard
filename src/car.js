@@ -18,7 +18,6 @@ export async function encode (root, blocks) {
   // @ts-expect-error
   const { writer, out } = CarWriter.create(root)
   for (const b of blocks) {
-    // @ts-expect-error incorrect CID type in @ipld/car
     writer.put(b)
   }
   writer.close()
