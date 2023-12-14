@@ -85,7 +85,10 @@ export class ContentClaimsBlockstore {
    */
   async get (link) {
     const claims = await this.#read(link, { serviceURL: this.#url })
-    return claimsGetBlock(claims, link, this.#carpark)
+    // eslint-disable-next-line no-unreachable-loop
+    for await (const block of claimsGetBlock(claims, link, this.#carpark)) {
+      return block
+    }
   }
 }
 
@@ -264,20 +267,16 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Index & import('./api.js').IndexMap} [index] - map of
- * @returns {Promise<Uint8Array|undefined>}
+ * @returns {AsyncGenerator<Uint8Array>}
  */
-async function claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
+async function * claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
   for await (const claim of claims) {
     switch (claim.type) {
       case 'assert/location':
-        for await (const block of fetchBlocksForLocationClaims([claim], link)) { // eslint-disable-line no-unreachable-loop
-          return block
-        }
+        yield * fetchBlocksForLocationClaims([claim], link)
         break
       case 'assert/relation':
-        for await (const block of fetchBlocksForRelationClaims([claim], link, carpark, index)) { // eslint-disable-line no-unreachable-loop
-          return block
-        }
+        yield * fetchBlocksForRelationClaims([claim], link, carpark, index)
         break
       default:
         // donno about this claim type
