@@ -127,9 +127,9 @@ function createIndexEntryMap (map = new Map()) {
  * get index for a link from a content claims client
  * @param {AsyncIterable<import('./api.js').LocationClaim>|Iterable<import('./api.js').LocationClaim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @returns {Promise<Uint8Array|undefined>}
+ * @returns {AsyncGenerator<Uint8Array>}
  */
-async function fetchBlockForLocationClaims (claims, link) {
+async function * fetchBlocksForLocationClaims (claims, link) {
   /**
    * @type {ReadableStream<{
    *   claim: import('@web3-storage/content-claims/client/api').LocationClaim
@@ -139,7 +139,7 @@ async function fetchBlockForLocationClaims (claims, link) {
    * }>}
    */
   const locatedBlocks = createReadableStream(claims)
-  // claim -> [claim, location]
+    // claim -> [claim, location]
     .pipeThrough(new TransformStream({
     /**
       * @param {import('@web3-storage/content-claims/client/api').LocationClaim} claim
@@ -148,7 +148,7 @@ async function fetchBlockForLocationClaims (claims, link) {
         for (const location of claim.location) { controller.enqueue([claim, location]) }
       }
     }))
-  // [claim, location] -> [claim, location, ok response]
+    // [claim, location] -> [claim, location, ok response]
     .pipeThrough(new TransformStream({
     /** @param {[claim: import('@web3-storage/content-claims/client/api').Claim, location: string]} chunk */
       async transform ([claim, location], controller) {
@@ -159,7 +159,7 @@ async function fetchBlockForLocationClaims (claims, link) {
         throw new Error(`unexpected not-ok response ${response}`)
       }
     }))
-  // [claim, location, ok response] -> { claim, location, ok response, block }
+    // [claim, location, ok response] -> { claim, location, ok response, block }
     .pipeThrough(new TransformStream({
     /** @param {[claim: import('@web3-storage/content-claims/client/api').LocationClaim, location: string, response: Response]} chunk */
       async transform ([claim, location, response], controller) {
@@ -171,41 +171,26 @@ async function fetchBlockForLocationClaims (claims, link) {
         }))
       }
     }))
-  const block = await locatedBlocks.getReader().read().then(({ done, value }) => value ? value.block.bytes : undefined)
-  return block
+  for await (const locatedBlock of locatedBlocks) {
+    yield locatedBlock.block.bytes
+  }
 }
 
 /**
- * get index for a link from a content claims client
- * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
+ * @param {import('./api.js').RelationClaim[]} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
- * @param {Index & import('./api.js').IndexMap} [index] - map of
- * @returns {Promise<Uint8Array|undefined>}
+ * @param {Map<string, Uint8Array>} carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Index & import('./api.js').IndexMap} index - map of
+ * @returns {AsyncGenerator<Uint8Array>}
  */
-async function claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
-  // the block, if we find it
-  let block
+async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
   for await (const claim of claims) {
-    switch (claim.type) {
-      case 'assert/location':
-        block = await fetchBlockForLocationClaims([claim], link)
-        if (block) return block
-        continue
-      case 'assert/relation':
-        break
-      default:
-        // donno about this claim type
-        continue
-    }
-    const relationClaim = claim
-    // export the blocks from the claim - may include the CARv2 indexes
-    const blocks = [...relationClaim.export()]
+    const blocks = [...claim.export()]
 
     const relationClaimPartBlocks = []
 
     // each part is a tuple of CAR CID (content) & CARv2 index CID (includes)
-    for (const { content, includes } of relationClaim.parts) {
+    for (const { content, includes } of claim.parts) {
       if (content.code !== CAR.code) continue
       if (!includes) continue
 
@@ -266,9 +251,37 @@ async function claimsGetBlock (claims, link, carpark = new Map(), index = create
         const blockstore = new R2Blockstore(r2Map, index)
         const block = await blockstore.get(link)
         if (block) {
-          return block.bytes
+          yield block.bytes
         }
       }
+    }
+  }
+}
+
+/**
+ * get index for a link from a content claims client
+ * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
+ * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
+ * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Index & import('./api.js').IndexMap} [index] - map of
+ * @returns {Promise<Uint8Array|undefined>}
+ */
+async function claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
+  for await (const claim of claims) {
+    switch (claim.type) {
+      case 'assert/location':
+        for await (const block of fetchBlocksForLocationClaims([claim], link)) { // eslint-disable-line no-unreachable-loop
+          return block
+        }
+        break
+      case 'assert/relation':
+        for await (const block of fetchBlocksForRelationClaims([claim], link, carpark, index)) { // eslint-disable-line no-unreachable-loop
+          return block
+        }
+        break
+      default:
+        // donno about this claim type
+        continue
     }
   }
 }
