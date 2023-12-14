@@ -125,6 +125,58 @@ function createIndexEntryMap (map = new Map()) {
 
 /**
  * get index for a link from a content claims client
+ * @param {AsyncIterable<import('./api.js').LocationClaim>|Iterable<import('./api.js').LocationClaim>} claims
+ * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
+ * @returns {Promise<Uint8Array|undefined>}
+ */
+async function fetchBlockForLocationClaims (claims, link) {
+  /**
+   * @type {ReadableStream<{
+   *   claim: import('@web3-storage/content-claims/client/api').LocationClaim
+   *   location: string
+   *   response: Response
+   *   block: import('carstream/api').Block
+   * }>}
+   */
+  const locatedBlocks = createReadableStream(claims)
+  // claim -> [claim, location]
+    .pipeThrough(new TransformStream({
+    /**
+      * @param {import('@web3-storage/content-claims/client/api').LocationClaim} claim
+      */
+      async transform (claim, controller) {
+        for (const location of claim.location) { controller.enqueue([claim, location]) }
+      }
+    }))
+  // [claim, location] -> [claim, location, ok response]
+    .pipeThrough(new TransformStream({
+    /** @param {[claim: import('@web3-storage/content-claims/client/api').Claim, location: string]} chunk */
+      async transform ([claim, location], controller) {
+        const response = await fetch(location, { headers: { accept: 'application/vnd.ipld.car' } })
+        if (response.ok) {
+          return controller.enqueue([claim, location, response])
+        }
+        throw new Error(`unexpected not-ok response ${response}`)
+      }
+    }))
+  // [claim, location, ok response] -> { claim, location, ok response, block }
+    .pipeThrough(new TransformStream({
+    /** @param {[claim: import('@web3-storage/content-claims/client/api').LocationClaim, location: string, response: Response]} chunk */
+      async transform ([claim, location, response], controller) {
+        await response.body?.pipeThrough(new CARReaderStream()).pipeTo(new WritableStream({
+          write: (block) => {
+          // @todo validate that block.bytes hashes to `link`
+            controller.enqueue({ claim, location, response, block })
+          }
+        }))
+      }
+    }))
+  const block = await locatedBlocks.getReader().read().then(({ done, value }) => value ? value.block.bytes : undefined)
+  return block
+}
+
+/**
+ * get index for a link from a content claims client
  * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
@@ -132,13 +184,13 @@ function createIndexEntryMap (map = new Map()) {
  * @returns {Promise<Uint8Array|undefined>}
  */
 async function claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
-  /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
-  const locationClaims = []
-
+  // the block, if we find it
+  let block
   for await (const claim of claims) {
     switch (claim.type) {
       case 'assert/location':
-        locationClaims.push(claim)
+        block = await fetchBlockForLocationClaims([claim], link)
+        if (block) return block
         continue
       case 'assert/relation':
         break
@@ -219,60 +271,16 @@ async function claimsGetBlock (claims, link, carpark = new Map(), index = create
       }
     }
   }
-
-  /**
-   * @type {ReadableStream<{
-   *   claim: import('@web3-storage/content-claims/client/api').LocationClaim
-   *   location: string
-   *   response: Response
-   *   block: import('carstream/api').Block
-   * }>}
-   */
-  const locatedBlocks = createReadableStream(locationClaims)
-    // claim -> [claim, location]
-    .pipeThrough(new TransformStream({
-      /**
-       * @param {import('@web3-storage/content-claims/client/api').LocationClaim} claim
-       */
-      async transform (claim, controller) {
-        for (const location of claim.location) { controller.enqueue([claim, location]) }
-      }
-    }))
-    // [claim, location] -> [claim, location, ok response]
-    .pipeThrough(new TransformStream({
-      /** @param {[claim: import('@web3-storage/content-claims/client/api').Claim, location: string]} chunk */
-      async transform ([claim, location], controller) {
-        const response = await fetch(location, { headers: { accept: 'application/vnd.ipld.car' } })
-        if (response.ok) {
-          return controller.enqueue([claim, location, response])
-        }
-        throw new Error(`unexpected not-ok response ${response}`)
-      }
-    }))
-    // [claim, location, ok response] -> { claim, location, ok response, block }
-    .pipeThrough(new TransformStream({
-      /** @param {[claim: import('@web3-storage/content-claims/client/api').LocationClaim, location: string, response: Response]} chunk */
-      async transform ([claim, location, response], controller) {
-        await response.body?.pipeThrough(new CARReaderStream()).pipeTo(new WritableStream({
-          write: (block) => {
-            // @todo validate that block.bytes hashes to `link`
-            controller.enqueue({ claim, location, response, block })
-          }
-        }))
-      }
-    }))
-  const block = await locatedBlocks.getReader().read().then(({ done, value }) => value ? value.block.bytes : undefined)
-  return block
 }
 
 /**
  * @template T
- * @param {Iterable<T>} source
+ * @param {Iterable<T>|AsyncIterable<T>} source
  */
 function createReadableStream (source) {
   return new ReadableStream({
-    start (controller) {
-      for (const item of source) {
+    async start (controller) {
+      for await (const item of source) {
         controller.enqueue(item)
       }
       controller.close()
