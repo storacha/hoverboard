@@ -6,6 +6,7 @@ import { CID } from 'multiformats'
 import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
 import * as freewayBlockstore from 'freeway/blockstore'
+import {Map as LinkMap} from 'lnmap'
 
 
 /* global ReadableStream */
@@ -105,15 +106,15 @@ async function claimsHas (
 }
 
 /**
- * get blocks for a link from a content claims client
+ * get index for a link from a content claims client
  * @param {AbstractClaimsClient['read']} read
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {URL} [serviceURL] - url to claims service to read from
  * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
- * @param {Map<UnknownLink, IndexEntry>} [index] - map of
+ * @param {LinkMap<UnknownLink, IndexEntry>} [index] - map of
  * @returns {Promise<Uint8Array|undefined>}
  */
-async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), index = new Map()) {
+async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), index = new LinkMap()) {
   const claims = await read(link, { serviceURL })
   /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
   const locationClaims = []
@@ -134,7 +135,7 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
         break
     }
   }
-  console.debug('WANT', link)
+
   for (const relationClaim of relationClaims) {
     console.debug('relationClaim', JSON.stringify(relationClaim, undefined, 2))
 
@@ -158,8 +159,6 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
         const includeParts = []
         for (const part of includes.parts) {
           // part is a CARLink to a car-multihash-index-sorted
-
-          console.log('looking in carpark for part', part)
           const partCarParkPath = `${part}/${part}.car`
           const obj = await carpark.get(partCarParkPath)
           if (!obj) continue
@@ -190,20 +189,21 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
         const includesContentCidCode = content.code
         assert.ok(includesContentCidCode === CAR.code, 'includesContentCidCode in CAR.code')
         const includesContentCidV1 = CID.create(1, includesContentCidCode, content.multihash)
-        const entries = await decodeRelationIncludesIndex(includesContentCidV1, indexBlock.bytes)
-        for (const entry of entries) {
+        for await (const entry of decodeRelationIncludesIndex(includesContentCidV1, indexBlock.bytes)) {
           const entryIndexKey = Link.create(raw.code, entry.multihash)
-          console.debug('got entry from index. setting key in index', [entryIndexKey, entry])
           index.set(entryIndexKey, entry)
         }
         relationClaimPartBlocks.push(indexBlock)
       }
-      const indexedBlocks = new IndexedCarParkBlocks(index, carpark)
-      // const b1 = indexedBlocks.get()
-    }
 
-    console.debug('relationClaimPartBlocks', relationClaimPartBlocks)
+      // ok maybe now the index has the cid we were originally looking for?
+      if (index.has(link)) {
+        console.debug(`now have index for link`, { link, index })
+        throw new Error(`found index for the link we're resolving. But need to convert to find the corresponding block.`)
+      }
+    }
   }
+
   /**
    * @type {ReadableStream<{
    *   claim: import('@web3-storage/content-claims/client/api').LocationClaim
@@ -212,7 +212,7 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
    *   block: import('carstream/api').Block
    * }>}
    */
-  const locatedBlocks = await createReadableStream(locationClaims)
+  const locatedBlocks = createReadableStream(locationClaims)
     // claim -> [claim, location]
     .pipeThrough(new TransformStream({
       /**
@@ -275,8 +275,7 @@ function createReadableStream (source) {
  * @param {import('cardex/api').CARLink} origin
  * @param {Uint8Array} bytes
  */
-const decodeRelationIncludesIndex = async (origin, bytes) => {
-  const entries = []
+const decodeRelationIncludesIndex = async function * (origin, bytes) {
   const readable = new ReadableStream({
     pull (controller) {
       controller.enqueue(bytes)
@@ -287,7 +286,6 @@ const decodeRelationIncludesIndex = async (origin, bytes) => {
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    entries.push(/** @type {IndexEntry} */({ origin, ...value }))
+    yield (/** @type {IndexEntry} */({ origin, ...value }))
   }
-  return entries
 }
