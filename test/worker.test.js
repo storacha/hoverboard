@@ -7,14 +7,6 @@ import { createLibp2p } from 'libp2p'
 import { mplex } from '@libp2p/mplex'
 import { peerId } from './fixture/peer.js'
 import test from 'ava'
-import { hasOwnProperty } from '../src/utils/object.js'
-import { createSimpleContentClaimsScenario, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
-import assert from 'node:assert'
-import { CARReaderStream } from 'carstream'
-import { sha256 } from 'multiformats/hashes/sha2'
-import * as bytes from 'multiformats/bytes'
-
-/* global WritableStream */
 
 /** @type {any[]} */
 const workers = []
