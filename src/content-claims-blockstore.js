@@ -5,7 +5,8 @@ import assert from 'assert'
 import { CID } from 'multiformats'
 import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
-// import * as freewayBlockstore from 'freeway/blockstore'
+import * as freewayBlockstore from 'freeway/blockstore'
+
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -150,10 +151,10 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
       assert.ok(includes.content.code === MultihashIndexSortedReader.codec, 'relationClaim.includes is link to car-multihash-index-sorted')
 
       /** @type {{ cid: import('multiformats').UnknownLink, bytes: Uint8Array }|undefined} */
-      let blockForIncludes = blocks.find(b => b.cid.equals(includes.content))
+      let indexBlock = blocks.find(b => b.cid.equals(includes.content))
 
       // if the index is not included in the claim, it should be in CARPARK
-      if (!blockForIncludes && includes.parts?.length) {
+      if (!indexBlock && includes.parts?.length) {
         const includeParts = []
         for (const part of includes.parts) {
           // part is a CARLink to a car-multihash-index-sorted
@@ -167,37 +168,37 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
           // console.debug('decoded part car to partBlocks', partBlocks)
           // console.debug('all parts should come to', content, includes.parts)
           // console.debug('all blocks', blocks)
-          blockForIncludes = blockForIncludes ?? partBlocks.find(b => b.cid.equals(includes.content))
+          indexBlock = indexBlock ?? partBlocks.find(b => b.cid.equals(includes.content))
           console.debug('end part loop', {
             part,
-            blockForIncludes,
+            blockForIncludes: indexBlock,
             partBlocks,
             includeParts
           })
-          if (blockForIncludes) {
+          if (indexBlock) {
             console.debug('got blockForIncludes. skipping further includes.parts')
             break
           }
         }
       }
 
-      if (blockForIncludes) {
-        console.debug('blockForIncludes', blockForIncludes)
-        assert.ok(blockForIncludes.cid.code === MultihashIndexSortedReader.codec)
-        const cidV1 = CID.create(1, MultihashIndexSortedReader.codec, blockForIncludes.cid.multihash)
+      if (indexBlock) {
+        console.debug('blockForIncludes', indexBlock)
+        assert.ok(indexBlock.cid.code === MultihashIndexSortedReader.codec)
+        const cidV1 = CID.create(1, MultihashIndexSortedReader.codec, indexBlock.cid.multihash)
         assert.ok(cidV1.code === MultihashIndexSortedReader.codec)
         const includesContentCidCode = content.code
         assert.ok(includesContentCidCode === CAR.code, 'includesContentCidCode in CAR.code')
         const includesContentCidV1 = CID.create(1, includesContentCidCode, content.multihash)
-        const entries = await decodeRelationIncludesIndex(includesContentCidV1, blockForIncludes.bytes)
+        const entries = await decodeRelationIncludesIndex(includesContentCidV1, indexBlock.bytes)
         for (const entry of entries) {
           const entryIndexKey = Link.create(raw.code, entry.multihash)
           console.debug('got entry from index. setting key in index', [entryIndexKey, entry])
           index.set(entryIndexKey, entry)
         }
-        relationClaimPartBlocks.push(blockForIncludes)
+        relationClaimPartBlocks.push(indexBlock)
       }
-      // const indexedBlocks = new IndexedCarParkBlocks(index, carpark)
+      const indexedBlocks = new IndexedCarParkBlocks(index, carpark)
       // const b1 = indexedBlocks.get()
     }
 
