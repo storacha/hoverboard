@@ -5,9 +5,7 @@ import assert from 'assert'
 import { CID } from 'multiformats'
 import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
-import * as freewayBlockstore from 'freeway/blockstore'
-import {Map as LinkMap} from 'lnmap'
-
+import { asyncIterableReader, readBlockHead } from '@ipld/car/decoder'
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -86,7 +84,8 @@ export class ContentClaimsBlockstore {
    * @param {UnknownLink} link
    */
   async get (link) {
-    return claimsGetBlock(this.#read, link, this.#url, this.#carpark)
+    const claims = await this.#read(link, { serviceURL: this.#url })
+    return claimsGetBlock(claims, link, this.#carpark)
   }
 }
 
@@ -106,39 +105,48 @@ async function claimsHas (
 }
 
 /**
- * get index for a link from a content claims client
- * @param {AbstractClaimsClient['read']} read
- * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {URL} [serviceURL] - url to claims service to read from
- * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
- * @param {LinkMap<UnknownLink, IndexEntry>} [index] - map of
- * @returns {Promise<Uint8Array|undefined>}
+ * @param {Map<string, Promise<IndexEntry|undefined>>} map - keys are CID strings
+ * @returns {import('./api.js').IndexMap & Index}
  */
-async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), index = new LinkMap()) {
-  const claims = await read(link, { serviceURL })
-  /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
-  const locationClaims = []
-  /** @type {import('@web3-storage/content-claims/client/api').RelationClaim[]} */
-  const relationClaims = []
-  for (const claim of claims) {
-    switch (claim.type) {
-      case 'assert/location':
-        // @ts-ignore
-        locationClaims.push(claim)
-        break
-      case 'assert/relation':
-        // @ts-ignore
-        relationClaims.push(claim)
-        break
-      default:
-        console.warn('unexpected claim type. skipping.', claim.type, claim)
-        break
+function createIndexEntryMap (map = new Map()) {
+  return {
+    get: async (key) => {
+      return map.get(key.toString())
+    },
+    has: async (key) => {
+      const hasKey = map.has(key.toString())
+      return hasKey
+    },
+    set: async (key, value) => {
+      map.set(key.toString(), Promise.resolve(value))
     }
   }
+}
 
-  for (const relationClaim of relationClaims) {
-    console.debug('relationClaim', JSON.stringify(relationClaim, undefined, 2))
+/**
+ * get index for a link from a content claims client
+ * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
+ * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
+ * @param {Map<string, Uint8Array>} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Index & import('./api.js').IndexMap} [index] - map of
+ * @returns {Promise<Uint8Array|undefined>}
+ */
+async function claimsGetBlock (claims, link, carpark = new Map(), index = createIndexEntryMap()) {
+  /** @type {import('@web3-storage/content-claims/client/api').LocationClaim[]} */
+  const locationClaims = []
 
+  for await (const claim of claims) {
+    switch (claim.type) {
+      case 'assert/location':
+        locationClaims.push(claim)
+        continue
+      case 'assert/relation':
+        break
+      default:
+        // donno about this claim type
+        continue
+    }
+    const relationClaim = claim
     // export the blocks from the claim - may include the CARv2 indexes
     const blocks = [...relationClaim.export()]
 
@@ -164,25 +172,17 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
           if (!obj) continue
           const partBlocks = await CAR.decode(obj)
           includeParts.push(...partBlocks)
-          // console.debug('decoded part car to partBlocks', partBlocks)
-          // console.debug('all parts should come to', content, includes.parts)
-          // console.debug('all blocks', blocks)
           indexBlock = indexBlock ?? partBlocks.find(b => b.cid.equals(includes.content))
-          console.debug('end part loop', {
-            part,
-            blockForIncludes: indexBlock,
-            partBlocks,
-            includeParts
-          })
           if (indexBlock) {
-            console.debug('got blockForIncludes. skipping further includes.parts')
+            // we found the indexBlock we need. No need to keep looping over parts
             break
           }
         }
       }
 
+      // we have a block for the whole Index linked from the relationClaim
+      // attempt to decode the index entries from the block and add them to the `index` map
       if (indexBlock) {
-        console.debug('blockForIncludes', indexBlock)
         assert.ok(indexBlock.cid.code === MultihashIndexSortedReader.codec)
         const cidV1 = CID.create(1, MultihashIndexSortedReader.codec, indexBlock.cid.multihash)
         assert.ok(cidV1.code === MultihashIndexSortedReader.codec)
@@ -197,9 +197,25 @@ async function claimsGetBlock (read, link, serviceURL, carpark = new Map(), inde
       }
 
       // ok maybe now the index has the cid we were originally looking for?
-      if (index.has(link)) {
-        console.debug(`now have index for link`, { link, index })
-        throw new Error(`found index for the link we're resolving. But need to convert to find the corresponding block.`)
+      if (await index.has(link)) {
+        /** @type {import('./api.js').KVBucketWithRangeQueries} */
+        const r2Map = {
+          async get (key, { range }) {
+            const bytes = carpark.get(key)
+            if (!bytes) return new Response(null)
+            if (!(('offset' in range) && typeof range.offset === 'number')) {
+              throw new Error('unexpected range options missing offset')
+            }
+            const rangeOffset = range.offset
+            const view = new DataView(bytes.buffer, bytes.byteOffset + rangeOffset, bytes.byteLength - rangeOffset)
+            return new Response(view)
+          }
+        }
+        const blockstore = new R2Blockstore(r2Map, index)
+        const block = await blockstore.get(link)
+        if (block) {
+          return block.bytes
+        }
       }
     }
   }
@@ -287,5 +303,46 @@ const decodeRelationIncludesIndex = async function * (origin, bytes) {
     const { done, value } = await reader.read()
     if (done) break
     yield (/** @type {IndexEntry} */({ origin, ...value }))
+  }
+}
+
+/**
+ * A blockstore that is backed by an R2 bucket which contains CARv2
+ * MultihashIndexSorted indexes alongside CAR files. It can read DAGs split
+ * across multiple CARs.
+ */
+export class R2Blockstore {
+  /**
+   * @param {import('./api.js').KVBucketWithRangeQueries} dataBucket
+   * @param {import('./api.js').Index} index
+   */
+  constructor (dataBucket, index) {
+    this._dataBucket = dataBucket
+    this._idx = index
+  }
+
+  /** @param {UnknownLink} cid */
+  async get (cid) {
+    const entry = await this._idx.get(cid)
+    if (!entry) return
+    const carPath = `${entry.origin}/${entry.origin}.car`
+    const range = { offset: entry.offset }
+    const res = await this._dataBucket.get(carPath, { range })
+    if (!res) return
+
+    const reader = res.body?.getReader()
+    const bytesReader = asyncIterableReader((async function * () {
+      if (!reader) return
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) return
+        yield value
+      }
+    })())
+
+    const blockHeader = await readBlockHead(bytesReader)
+    const bytes = await bytesReader.exactly(blockHeader.blockLength)
+    reader?.cancel()
+    return { cid, bytes }
   }
 }
