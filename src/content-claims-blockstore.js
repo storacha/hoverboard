@@ -1,11 +1,12 @@
 import { CARReaderStream } from 'carstream/reader'
 import * as CAR from './car.js'
 import { MultihashIndexSortedReader } from 'cardex/multihash-index-sorted'
-import assert from 'assert'
+import assert from 'node:assert'
 import { CID } from 'multiformats'
 import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
 import { asyncIterableReader, readBlockHead } from '@ipld/car/decoder'
+import errCode from 'err-code'
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -16,9 +17,17 @@ import { asyncIterableReader, readBlockHead } from '@ipld/car/decoder'
  */
 
 /**
+ * @typedef {import('./blocks.js').Blockstore} Blockstore
+ */
+
+/**
  * a store of ipld blocks that be fetched by CID
  */
 export class AbstractBlockStore {
+  constructor () {
+    void /** @type {Blockstore} */ (this) // eslint-disable-line no-void
+  }
+
   /**
    * @param {UnknownLink} link
    * @returns {Promise<Uint8Array|undefined>}
@@ -26,6 +35,19 @@ export class AbstractBlockStore {
   async get (link) {
     throw new Error('not implemented')
   }
+
+  /**
+   * methods from import('interface-blockstore').Blockstore and e.g. its MemoryBlockstore.
+   * but then I realized they are not on `Blockstore`
+   */
+
+  async delete () { throw new Error('not implemented') }
+  async * deleteMany () { throw new Error('not implemented') }
+  async * getAll () { throw new Error('not implemented') }
+  async * getMany () { throw new Error('not implemented') }
+  /** @returns {Promise<CID>} */
+  async put () { throw new Error('not implemented') }
+  async * putMany () { throw new Error('not implemented') }
 
   /**
    * @param {UnknownLink} link
@@ -52,8 +74,9 @@ export class AbstractClaimsClient {
 
 /**
  * @implements {AbstractBlockStore}
+ * @implements {Blockstore}
  */
-export class ContentClaimsBlockstore {
+export class ContentClaimsBlockstore extends AbstractBlockStore {
   /** @type {AbstractClaimsClient['read']} */
   #read
   /** @type {URL|undefined} */
@@ -68,9 +91,11 @@ export class ContentClaimsBlockstore {
    * @param {URL} [options.url]
    */
   constructor ({ read, url, carpark = new Map() }) {
+    super()
     this.#read = read
     this.#url = url
     this.#carpark = carpark
+    void /** @type {Blockstore} */ (this) // eslint-disable-line no-void
   }
 
   /**
@@ -89,6 +114,7 @@ export class ContentClaimsBlockstore {
     for await (const block of claimsGetBlock(claims, link, this.#carpark)) {
       return block
     }
+    throw errCode(new Error('not found'), 'ERR_NOT_FOUND')
   }
 }
 

@@ -13,6 +13,7 @@ import { peerId } from './fixture/peer.js'
 import test from 'ava'
 import { ShardingStream, UnixFS } from '@web3-storage/upload-client'
 import assert from 'node:assert'
+import { CID } from 'multiformats'
 
 /* global Blob, TransformStream, WritableStream */
 
@@ -66,32 +67,33 @@ test('helia bitswap', async t => {
   const decoder = new TextDecoder('utf8')
   let text = ''
 
-  console.log(`Fetching ${root}`)
-  for await (const chunk of heliaFs.cat(root)) {
+  assert.ok(root)
+  const rootCid = CID.create(root.version, root.code, root.multihash)
+
+  console.log(`Fetching ${rootCid}`)
+  for await (const chunk of heliaFs.cat(rootCid)) {
     text += decoder.decode(chunk, { stream: true })
   }
 
   text += decoder.decode()
 
-  t.true(await helia.blockstore.has(root), 'block should now be in helia blockstore')
+  t.true(await helia.blockstore.has(rootCid), 'block should now be in helia blockstore')
 
   t.is(text, expected, 'bitswap roundtrippin')
 })
 
-test.skip('helia bitswap + content-claims', async t => {
+test('helia bitswap + content-claims', async t => {
   const contentA = await createMockClaimableContent(`contentA-${Math.random().toString().slice(2)}`)
-  console.log('contentA', {
-    ...contentA,
-    text: (new TextDecoder()).decode(contentA.buffer)
-  })
   const contentClaims = createMockContentClaims([contentA])
-  const { libp2p, heliaFs, hoverboard } = await createHeliaBitswapScenario({ contentClaims })
-  await libp2p.dial(hoverboard)
+  const { libp2p, heliaFs, hoverboard, root } = await createHeliaBitswapScenario({ contentClaims })
+  assert.ok(root)
+  const rootCid = CID.create(root.version, root.code, root.multihash)
 
-  // we should be able to use helia.cat(contentA.unixfsLink) and get blocks that come form contentA.unixfsCar
+  const peer = await libp2p.dial(hoverboard)
+  t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
 
-  // @ts-expect-error unixfsLink type
-  const contentACat = await concat(heliaFs.cat(contentA.unixfsLink))
+  // we should be able to use helia.cat(rootCid) and get blocks that come form contentA.unixfsCar
+  const contentACat = await concat(heliaFs.cat(rootCid))
   const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
   t.assert(contentACatText)
 })

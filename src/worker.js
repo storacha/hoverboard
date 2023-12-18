@@ -7,6 +7,7 @@ import { Metrics } from './metrics.js'
 
 /**
  * @typedef {object} Env
+ * @prop {string} CONTENT_CLAIMS - URL to default content claims service
  * @prop {string} DYNAMO_TABLE - block index table name
  * @prop {string} DYNAMO_REGION - block index table region
  * @prop {string} [DYNAMO_ENDPOINT] - override the dynamo api url
