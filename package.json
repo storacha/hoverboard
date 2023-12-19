@@ -13,6 +13,7 @@
     "lint": "standard",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
+    "pretest": "npm run build:wrangler",
     "test": "c8 ava --serial --no-worker-threads",
     "dial": "node example/dial.js"
   },
@@ -50,7 +51,6 @@
     "carstream": "^1.1.1",
     "cf-libp2p-ws-transport": "^1.1.1",
     "events": "^3.3.0",
-    "freeway": "github:web3-storage/freeway",
     "interface-blockstore": "^5.2.7",
     "ipfs-car": "^0.9.2",
     "it-concat": "^3.0.1",
