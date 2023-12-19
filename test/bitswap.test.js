@@ -14,7 +14,7 @@ import test from 'ava'
 import assert from 'node:assert'
 import { CID } from 'multiformats'
 import { createLogLevel } from './worker.test.js'
-import { createSimpleContentClaimsScenario, generateClaims, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
+import { collect, createSimpleContentClaimsScenario, generateClaims, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as Link from 'multiformats/link'
 import * as CAR from '../src/car.js'
@@ -42,7 +42,6 @@ test.after(_ => {
  * @param {"none" | "info" | "error" | "log" | "warn" | "debug"} [options.logLevel]
  */
 async function createWorker (env = {}, { logLevel = createLogLevel(process?.env.WORKER_TEST_LOG_LEVEL) } = {}) {
-  console.debug('bitswap.test.js createWorker', { env, logLevel })
   const w = await testWorker('src/worker.js', {
     ...(logLevel ? { logLevel } : {}),
     vars: {
@@ -114,10 +113,8 @@ test('helia bitswap + content-claims', async t => {
    */
   async function useClaimsServer ({ url }) {
     const contentClaims = { url: claimsServer.url.toString() }
-    console.debug('booted claim server', contentClaims)
 
     const { libp2p, heliaFs, hoverboard, miniflare } = await createHeliaBitswapScenarioMiniflare({ contentClaims })
-    console.warn('created scenario')
 
     const carpark = await miniflare.getR2Bucket('CARPARK')
     const carparkKv = createBucketFromR2Miniflare(carpark)
@@ -141,21 +138,13 @@ test('helia bitswap + content-claims', async t => {
       Link.create(CAR.code, await sha256.digest(firstIndexCar))
     )
 
-    console.debug('dialing')
     const peer = await libp2p.dial(hoverboard)
-    console.debug('dialed', peer)
     t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
 
     // we should be able to use helia.cat(rootCid) and get blocks that come form contentA.unixfsCar
-    console.debug('about to cat', scenario.inputCID)
-    const contentACat = heliaFs.cat(scenario.inputCID)
-    console.debug('did cat now awaiting', contentACat)
-    for await (const chunk of contentACat) {
-      console.debug('got chunk from cat', chunk)
-    }
-    console.debug('did cat', contentACat)
-    // const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
-    // t.assert(contentACatText)
+    const contentACat = await collect(heliaFs.cat(scenario.inputCID)).then(a => a[0])
+    const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
+    t.is(contentACatText, testInput)
   }
 })
 
@@ -240,12 +229,10 @@ async function createHeliaBitswapScenarioMiniflare (
   const blob = new Blob([encoder.encode(expected)])
   const root = await builder.add(blob)
 
-  console.warn('Creating local hoverboard using miniflare')
   const miniflareHttp = {
     host: '127.0.0.1',
     port: 63000 + Math.floor(Math.random() * 1000)
   }
-  console.warn('__dirname', __dirname)
   const miniflare = new Miniflare({
     ...miniflareHttp,
     scriptPath: path.join(__dirname, '../dist/worker.js'),
