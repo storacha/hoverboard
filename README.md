@@ -2,6 +2,8 @@
 
 An IPFS Bitswap Peer in Cloudflare Workers
 
+![hoverboard overview diagram](./docs/hoverboard.svg)
+
 ## Getting started
 
 Install `node` >= 18, and `wrangler` >= 3
@@ -47,4 +49,3 @@ Set the following with `wrangler secret put <key>`
 - AWS_ACCESS_KEY_ID - aws creds
 - AWS_SECRET_ACCESS_KEY - aws creds
 - PEER_ID_JSON - stringified json peerId spec for this node
-
