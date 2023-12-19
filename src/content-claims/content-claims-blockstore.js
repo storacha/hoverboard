@@ -1,5 +1,5 @@
 import { CARReaderStream } from 'carstream/reader'
-import * as CAR from './car.js'
+import * as CAR from '../car.js'
 import { MultihashIndexSortedReader } from 'cardex/multihash-index-sorted'
 import { CID } from 'multiformats'
 import * as Link from 'multiformats/link'
@@ -16,7 +16,7 @@ import errCode from 'err-code'
  */
 
 /**
- * @typedef {import('./blocks.js').Blockstore} Blockstore
+ * @typedef {import('../blocks.js').Blockstore} Blockstore
  */
 
 /**
@@ -79,13 +79,13 @@ export class ContentClaimsBlockstore extends AbstractBlockStore {
   #read
   /** @type {URL|undefined} */
   #url
-  /** @type {import('./kv-bucket/api.js').KVBucketWithRangeQueries}  */
+  /** @type {import('../kv-bucket/api.js').KVBucketWithRangeQueries}  */
   #carpark
 
   /**
    * @param {object} options
    * @param {AbstractClaimsClient['read']} options.read
-   * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
+   * @param {import('../kv-bucket/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
    * @param {URL} [options.url]
    */
   constructor ({ read, url, carpark }) {
@@ -134,7 +134,7 @@ async function claimsHas (
 
 /**
  * @param {Map<string, Promise<IndexEntry|undefined>>} map - keys are CID strings
- * @returns {import('./api.js').IndexMap & Index}
+ * @returns {import('../api.js').IndexMap & Index}
  */
 function createIndexEntryMap (map = new Map()) {
   return {
@@ -153,7 +153,7 @@ function createIndexEntryMap (map = new Map()) {
 
 /**
  * get index for a link from a content claims client
- * @param {AsyncIterable<import('./api.js').LocationClaim>|Iterable<import('./api.js').LocationClaim>} claims
+ * @param {AsyncIterable<import('../api.js').LocationClaim>|Iterable<import('../api.js').LocationClaim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @returns {AsyncGenerator<Uint8Array>}
  */
@@ -205,10 +205,10 @@ async function * fetchBlocksForLocationClaims (claims, link) {
 }
 
 /**
- * @param {import('./api.js').RelationClaim[]} claims
+ * @param {import('../api.js').RelationClaim[]} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
- * @param {Index & import('./api.js').IndexMap} index - map of
+ * @param {import('../kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Index & import('../api.js').IndexMap} index - map of
  * @returns {AsyncGenerator<Uint8Array>}
  */
 async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
@@ -274,10 +274,10 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
 
 /**
  * get index for a link from a content claims client
- * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
+ * @param {AsyncIterable<import('../api.js').Claim>|Iterable<import('../api.js').Claim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
- * @param {Index & import('./api.js').IndexMap} [index] - map of
+ * @param {import('../kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {Index & import('../api.js').IndexMap} [index] - map of
  * @returns {AsyncGenerator<Uint8Array>}
  */
 async function * claimsGetBlock (claims, link, carpark, index = createIndexEntryMap()) {
@@ -312,8 +312,8 @@ function createReadableStream (source) {
 }
 
 /**
- * @typedef {import('./api.js').IndexEntry} IndexEntry
- * @typedef {import('./api.js').Index} Index
+ * @typedef {import('../api.js').IndexEntry} IndexEntry
+ * @typedef {import('../api.js').Index} Index
  */
 
 /**
@@ -344,8 +344,8 @@ const decodeRelationIncludesIndex = async function * (origin, bytes) {
  */
 export class R2Blockstore {
   /**
-   * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} dataBucket
-   * @param {import('./api.js').Index} index
+   * @param {import('../kv-bucket/api.js').KVBucketWithRangeQueries} dataBucket
+   * @param {import('../api.js').Index} index
    */
   constructor (dataBucket, index) {
     this._dataBucket = dataBucket

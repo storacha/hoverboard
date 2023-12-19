@@ -7,8 +7,9 @@ import { fromString } from 'uint8arrays/from-string'
 import { DynamoIndex, CachingIndex } from './s3/block-index.js'
 import { DynamoBlockstore } from './s3/blockstore.js'
 import { DenyingBlockStore } from './deny.js'
-import { ContentClaimsBlockstore, createBucketFromR2 } from './content-claims-blockstore.js'
+import { ContentClaimsBlockstore } from './content-claims/content-claims-blockstore.js'
 import * as Claims from '@web3-storage/content-claims/client'
+import { createBucketFromR2 } from './kv-bucket/kv-bucket-cloudflare.js'
 
 const CAR = 0x202
 
@@ -234,6 +235,10 @@ function getAwsCredentials (env) {
   return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined
 }
 
+/**
+ * compose several blockstores together into a read-only composition.
+ * methods will call the blockstores in the order they are passed to the constructor.
+ */
 export class CompositeBlockstore {
   /**
    * @param {Iterable<Blockstore>} blockstores

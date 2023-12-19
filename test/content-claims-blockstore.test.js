@@ -1,6 +1,6 @@
 import test from 'ava'
 import { createSimpleContentClaimsScenario, generateClaims, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
-import { ContentClaimsBlockstore } from '../src/content-claims-blockstore.js'
+import { ContentClaimsBlockstore } from '../src/content-claims/content-claims-blockstore.js'
 import * as Claims from '@web3-storage/content-claims/client'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as Link from 'multiformats/link'

@@ -111,18 +111,10 @@ test('helia bitswap + content-claims', async t => {
    * @param {{ url: URL }} options
    */
   async function useClaimsServer ({ url }) {
-    const contentClaims = { url: claimsServer.url.toString() }
-
-    const { libp2p, heliaFs, hoverboard, miniflare } = await createHeliaBitswapScenarioMiniflare({ contentClaims })
-
+    const { libp2p, heliaFs, hoverboard, miniflare } = await createHeliaBitswapScenarioMiniflare({ contentClaims: { url: claimsServer.url.toString() } })
     const carpark = await miniflare.getR2Bucket('CARPARK')
-    const carparkKv = createBucketFromR2Miniflare(carpark)
-
-    // lets generate claims and make sure they go into the carpark
-    // so mock content claims will be able to read them out
     const testInput = `test-${Math.random().toString().slice(2)}`
-    // this will write into carpark
-    const scenario = await createSimpleContentClaimsScenario(testInput, carparkKv)
+    const scenario = await createSimpleContentClaimsScenario(testInput, createBucketFromR2Miniflare(carpark))
     const firstIndex = [...scenario.sharded.indexes.entries()][0]
     const firstIndexCar = await scenario.sharded.indexCars.get(firstIndex[0])
     assert.ok(firstIndexCar)
@@ -146,11 +138,6 @@ test('helia bitswap + content-claims', async t => {
     t.is(contentACatText, testInput)
   }
 })
-
-/**
- * @typedef ClaimableContent
- * @property {ArrayBuffer} buffer
- */
 
 /**
  * test scenario that setups up a hoverboard running in a worker,

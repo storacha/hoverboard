@@ -21,7 +21,7 @@ import { encodeVarint } from 'cardex/encoder'
 import { MultiIndexWriter } from 'cardex/multi-index'
 import { TreewalkCarSplitter } from 'carbites/treewalk' // chunk to ~10MB CARs
 import { MultihashIndexSortedWriter } from 'cardex'
-import { createKvBucketFromMap } from '../../src/content-claims-blockstore.js'
+import { createKvBucketFromMap } from '../../src/kv-bucket/kv-bucket.js'
 
 /* global WritableStream */
 /* global ReadableStream */
@@ -167,7 +167,7 @@ export async function encodeInvocationBlock (invocation) {
 
 /**
  * @param {string} input - text input to use as the sample content that will be encoded into a car file
- * @param {import('../../src/api.js').KVBucketWithRangeQueries} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {import('../../src/kv-bucket/api.js').KVBucketWithRangeQueries} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {object} options
  * @param {import('@ucanto/interface').Signer} [options.signer]
  */
@@ -286,11 +286,14 @@ export async function collect (collectable) {
   for await (const item of collectable) { items.push(item) }
   return items
 }
+
 const DEFAULT_SHARD_SIZE = 1024 * 1024 * 10
 
 /**
- * @todo don't use UnknownLink
- * @typedef {LinkMap<import('@ucanto/interface').UnknownLink, Promise<ArrayBuffer>>} ShardLinkToShardBytesMap
+ * @typedef {import('multiformats/link').Link<unknown, number, 18, 1>} CarSha256Link
+ * @typedef {import('multiformats/link').Link<unknown, 514, 18, 1>} ShardCarSha256Link
+ * @typedef {import('multiformats/link').Link<unknown, 1025, 18, 1>} MutlihashIndexSortedSha256Link
+ * @typedef {LinkMap<ShardCarSha256Link, Promise<ArrayBuffer>>} ShardLinkToShardBytesMap
  */
 
 /**
@@ -301,10 +304,10 @@ const DEFAULT_SHARD_SIZE = 1024 * 1024 * 10
  * @param {number} [options.shardSize]
  * @param {ShardLinkToShardBytesMap} [options.shards]
  * @param {Map<string, Uint8Array>} [options.dudewhere]
- * @param {import('../../src/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {import('../../src/kv-bucket/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Map<string, Uint8Array>} [options.satnav]
- * @param {LinkMap<import('multiformats').Link<unknown,number,number,1>, Promise<Uint8Array>>} [options.indexes]
- * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} [options.indexCars]
+ * @param {LinkMap<MutlihashIndexSortedSha256Link, Promise<Uint8Array>>} [options.indexes] - values are MultihashSortedIndex bytes
+ * @param {LinkMap<MutlihashIndexSortedSha256Link, Promise<Uint8Array>>} [options.indexCars] - values are CARs containing MultihashSortedIndex blocks
  * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} [options.cars]
  * @param {Array<{ shard: import('multiformats').UnknownLink, index: import('multiformats').UnknownLink }>} [options.shardOrder]
  */
