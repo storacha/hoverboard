@@ -20,10 +20,10 @@ import * as CAR from '../src/car.js'
 import { sha256 } from 'multiformats/hashes/sha2'
 import { Miniflare, Log, LogLevel } from 'miniflare'
 import { Map as LinkMap } from 'lnmap'
-import { createBucketFromR2Miniflare } from '../src/content-claims-blockstore.js'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { createLogLevel } from './lib/log.js'
+import { createBucketFromR2Miniflare } from '../src/kv-bucket/kv-bucket-cloudflare.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 

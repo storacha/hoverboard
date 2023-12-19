@@ -79,13 +79,13 @@ export class ContentClaimsBlockstore extends AbstractBlockStore {
   #read
   /** @type {URL|undefined} */
   #url
-  /** @type {import('./api.js').KVBucketWithRangeQueries}  */
+  /** @type {import('./kv-bucket/api.js').KVBucketWithRangeQueries}  */
   #carpark
 
   /**
    * @param {object} options
    * @param {AbstractClaimsClient['read']} options.read
-   * @param {import('./api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
+   * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
    * @param {URL} [options.url]
    */
   constructor ({ read, url, carpark }) {
@@ -207,7 +207,7 @@ async function * fetchBlocksForLocationClaims (claims, link) {
 /**
  * @param {import('./api.js').RelationClaim[]} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {import('./api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Index & import('./api.js').IndexMap} index - map of
  * @returns {AsyncGenerator<Uint8Array>}
  */
@@ -262,18 +262,7 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
 
       // ok maybe now the index has the cid we were originally looking for?
       if (await index.has(link)) {
-        /** @type {import('./api.js').KVBucketWithRangeQueries} */
-        const r2Map = {
-          async get (key, { range } = {}) {
-            const bytes = await carpark.get(key, { range }).then(r => r.arrayBuffer())
-            if (!bytes) return new Response(null)
-            return new Response(bytes)
-          },
-          async set (key, value) {
-            await carpark.set(key, value)
-          }
-        }
-        const blockstore = new R2Blockstore(r2Map, index)
+        const blockstore = new R2Blockstore(carpark, index)
         const block = await blockstore.get(link)
         if (block) {
           yield block.bytes
@@ -284,48 +273,10 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
 }
 
 /**
- * @param {R2Bucket} r2
- * @returns {import('./api.js').KVBucketWithRangeQueries}
- */
-export function createBucketFromR2 (r2) {
-  /** @type {import('./api.js').KVBucketWithRangeQueries} */
-  const bucket = {
-    async get (key, options = {}) {
-      const range = options?.range || undefined
-      const bytes = await r2.get(key, range ? { range } : undefined).then(r => r?.arrayBuffer())
-      return new Response(bytes)
-    },
-    async set (key, value) {
-      await r2.put(key, value)
-    }
-  }
-  return bucket
-}
-
-/**
- * @param {Pick<import('miniflare').ReplaceWorkersTypes<import('@cloudflare/workers-types/experimental').R2Bucket>, 'get'|'put'>} r2
- * @returns {import('./api.js').KVBucketWithRangeQueries}
- */
-export function createBucketFromR2Miniflare (r2) {
-  /** @type {import('./api.js').KVBucketWithRangeQueries} */
-  const bucket = {
-    async get (key, options = {}) {
-      const range = options?.range || undefined
-      const bytes = await r2.get(key, range ? { range } : undefined).then(r => r?.arrayBuffer())
-      return new Response(bytes)
-    },
-    async set (key, value) {
-      await r2.put(key, value)
-    }
-  }
-  return bucket
-}
-
-/**
  * get index for a link from a content claims client
  * @param {AsyncIterable<import('./api.js').Claim>|Iterable<import('./api.js').Claim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @param {import('./api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Index & import('./api.js').IndexMap} [index] - map of
  * @returns {AsyncGenerator<Uint8Array>}
  */
@@ -393,7 +344,7 @@ const decodeRelationIncludesIndex = async function * (origin, bytes) {
  */
 export class R2Blockstore {
   /**
-   * @param {import('./api.js').KVBucketWithRangeQueries} dataBucket
+   * @param {import('./kv-bucket/api.js').KVBucketWithRangeQueries} dataBucket
    * @param {import('./api.js').Index} index
    */
   constructor (dataBucket, index) {
@@ -424,37 +375,5 @@ export class R2Blockstore {
     const bytes = await bytesReader.exactly(blockHeader.blockLength)
     reader?.cancel()
     return { cid, bytes }
-  }
-}
-
-/**
- * @template {Map<string, Uint8Array>} M
- * @param {M} map
- * @returns {import('../src/api.js').KVBucketWithRangeQueries}
- */
-export function createKvBucketFromMap (map) {
-  /** @type {import('../src/api.js').KVBucketWithRangeQueries} */
-  return {
-    // @ts-expect-error here for debugging
-    map,
-    mapValues: [...map.values()].map(v => JSON.stringify(v)),
-    /**
-     *
-     * @param {string} key
-     * @param {object} [options]
-     * @param {object} [options.range]
-     * @param {number} [options.range.offset]
-     * @returns
-     */
-    async get (key, { range = {} } = {}) {
-      const keyBytes = await Promise.resolve(map.get(key))
-      if (!keyBytes) return new Response(null)
-      const rangeOffset = 'offset' in range ? range.offset ?? 0 : 0
-      const view = new DataView(keyBytes.buffer, keyBytes.byteOffset + rangeOffset, keyBytes.byteLength - rangeOffset)
-      return new Response(view)
-    },
-    async set (key, value) {
-      await Promise.resolve(map.set(key, value))
-    }
   }
 }

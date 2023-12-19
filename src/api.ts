@@ -11,11 +11,6 @@ export interface Index {
   get (c: UnknownLink): Promise<IndexEntry|undefined>
 }
 
-export interface KVBucketWithRangeQueries {
-  get (key: string, options?: { range?: { offset: number } }): Promise<Response>
-  set (key: string, value: Uint8Array): Promise<void>
-}
-
 // the keys in an index map are CIDs of the hash of the index entry
 export type RawIndexEntryLink = Link<unknown, typeof raw['code'], number, 1>
 
