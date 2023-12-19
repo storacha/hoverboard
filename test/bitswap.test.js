@@ -13,7 +13,6 @@ import { peerId } from './fixture/peer.js'
 import test from 'ava'
 import assert from 'node:assert'
 import { CID } from 'multiformats'
-import { createLogLevel } from './worker.test.js'
 import { collect, createSimpleContentClaimsScenario, generateClaims, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
 import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
 import * as Link from 'multiformats/link'
@@ -24,6 +23,7 @@ import { Map as LinkMap } from 'lnmap'
 import { createBucketFromR2Miniflare } from '../src/content-claims-blockstore.js'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { createLogLevel } from './lib/log.js'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -32,8 +32,8 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 /** @type {any[]} */
 const workers = []
 
-test.after(_ => {
-  workers.forEach(w => w.stop())
+test.after(async _ => {
+  await Promise.allSettled(workers.map(w => w.stop()))
 })
 
 /**
@@ -78,7 +78,6 @@ test('helia bitswap', async t => {
   const { expected, libp2p, helia, heliaFs, hoverboard, root } = await createHeliaBitswapScenario()
 
   console.log(`Dialing ${hoverboard}`)
-
   const peer = await libp2p.dial(hoverboard)
   t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
 

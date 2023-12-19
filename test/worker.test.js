@@ -7,29 +7,14 @@ import { createLibp2p } from 'libp2p'
 import { mplex } from '@libp2p/mplex'
 import { peerId } from './fixture/peer.js'
 import test from 'ava'
+import { createLogLevel } from './lib/log.js'
 
 /** @type {any[]} */
 const workers = []
 
-test.after(_ => {
-  workers.forEach(w => w.stop())
+test.after(async _ => {
+  await Promise.allSettled(workers.map(w => w.stop()))
 })
-
-/**
- * @typedef {"none" | "info" | "error" | "log" | "warn" | "debug"} LogLevel
- */
-
-/**
- * @param {unknown} input
- * @returns {LogLevel | undefined}
- */
-export const createLogLevel = (input) => {
-  const levels = /** @type {const} */ (['none', 'info', 'error', 'log', 'warn', 'debug'])
-  // @ts-expect-error because input is string not LogLevel
-  if (levels.includes(input)) {
-    return /** @type {LogLevel} */ (input)
-  }
-}
 
 /**
  * @param {Record<string, string>} env
@@ -62,8 +47,9 @@ function getListenAddr ({ port, address }) {
 }
 
 test('get /', async t => {
-  const worker = await createWorker()
-  const resp = await worker.fetch()
+  const { address, port } = await createWorker()
+  const url = `http://${address === 'localhost' ? '127.0.0.1' : address}:${port}`
+  const resp = await fetch(url)
   const text = await resp.text()
   t.regex(text, new RegExp(peerId.id))
 })
