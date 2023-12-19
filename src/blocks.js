@@ -7,7 +7,7 @@ import { fromString } from 'uint8arrays/from-string'
 import { DynamoIndex, CachingIndex } from './s3/block-index.js'
 import { DynamoBlockstore } from './s3/blockstore.js'
 import { DenyingBlockStore } from './deny.js'
-import { ContentClaimsBlockstore } from './content-claims-blockstore.js'
+import { ContentClaimsBlockstore, createBucketFromR2 } from './content-claims-blockstore.js'
 import * as Claims from '@web3-storage/content-claims/client'
 
 const CAR = 0x202
@@ -41,7 +41,8 @@ export async function getBlockstore (env, ctx, metrics) {
     r2,
     new ContentClaimsBlockstore({
       url: new URL(env.CONTENT_CLAIMS),
-      read: Claims.read
+      read: Claims.read,
+      carpark: createBucketFromR2(env.CARPARK)
     })
   ])
   const cached = new CachingBlockStore(withContentClaims, await caches.open('blockstore:bytes'), ctx, metrics)

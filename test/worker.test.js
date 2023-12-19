@@ -23,7 +23,7 @@ test.after(_ => {
  * @param {unknown} input
  * @returns {LogLevel | undefined}
  */
-const createLogLevel = (input) => {
+export const createLogLevel = (input) => {
   const levels = /** @type {const} */ (['none', 'info', 'error', 'log', 'warn', 'debug'])
   // @ts-expect-error because input is string not LogLevel
   if (levels.includes(input)) {
@@ -36,7 +36,7 @@ const createLogLevel = (input) => {
  * @param {object} options
  * @param {"none" | "info" | "error" | "log" | "warn" | "debug"} [options.logLevel]
  */
-async function createWorker (env = {}, { logLevel = createLogLevel(process.env.WORKER_TEST_LOG_LEVEL) } = {}) {
+async function createWorker (env = {}, { logLevel = createLogLevel(env.WORKER_TEST_LOG_LEVEL) } = {}) {
   const w = await testWorker('src/worker.js', {
     ...(logLevel ? { logLevel } : {}),
     vars: {
@@ -57,7 +57,8 @@ async function createWorker (env = {}, { logLevel = createLogLevel(process.env.W
  * @param {number} worker.port
  */
 function getListenAddr ({ port, address }) {
-  return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${peerId.id}`)
+  const ip = (address === 'localhost') ? '127.0.0.1' : address
+  return multiaddr(`/ip4/${ip}/tcp/${port}/ws/p2p/${peerId.id}`)
 }
 
 test('get /', async t => {

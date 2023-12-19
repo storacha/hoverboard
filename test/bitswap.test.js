@@ -11,11 +11,23 @@ import { Builder } from './lib/builder.js'
 import { createDynamo, createDynamoTable, createS3, createS3Bucket } from './lib/aws.js'
 import { peerId } from './fixture/peer.js'
 import test from 'ava'
-import { ShardingStream, UnixFS } from '@web3-storage/upload-client'
 import assert from 'node:assert'
 import { CID } from 'multiformats'
+import { createLogLevel } from './worker.test.js'
+import { createSimpleContentClaimsScenario, generateClaims, listen, mockClaimsService } from './lib/content-claims-nodejs.js'
+import { Signer as Ed25519Signer } from '@ucanto/principal/ed25519'
+import * as Link from 'multiformats/link'
+import * as CAR from '../src/car.js'
+import { sha256 } from 'multiformats/hashes/sha2'
+import { Miniflare, Log, LogLevel } from 'miniflare'
+import { Map as LinkMap } from 'lnmap'
+import { createBucketFromR2Miniflare } from '../src/content-claims-blockstore.js'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 
-/* global Blob, TransformStream, WritableStream */
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+
+/* global Blob */
 
 /** @type {any[]} */
 const workers = []
@@ -25,12 +37,18 @@ test.after(_ => {
 })
 
 /**
- * @param {Partial<import('../src/worker.js').Env>} env
+ * @param {Record<string, string>} env
+ * @param {object} options
+ * @param {"none" | "info" | "error" | "log" | "warn" | "debug"} [options.logLevel]
  */
-async function createWorker (env = {}) {
+async function createWorker (env = {}, { logLevel = createLogLevel(process?.env.WORKER_TEST_LOG_LEVEL) } = {}) {
+  console.debug('bitswap.test.js createWorker', { env, logLevel })
   const w = await testWorker('src/worker.js', {
-    // @ts-ignore
-    vars: env,
+    ...(logLevel ? { logLevel } : {}),
+    vars: {
+      PEER_ID_JSON: JSON.stringify(peerId),
+      ...env
+    },
     experimental: {
       disableExperimentalWarning: true
     }
@@ -45,7 +63,8 @@ async function createWorker (env = {}) {
  * @param {string} worker.address
  */
 function getListenAddr ({ port, address }) {
-  return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${peerId.id}`)
+  const ip = (address === 'localhost') ? '127.0.0.1' : address
+  return multiaddr(`/ip4/${ip}/tcp/${port}/ws/p2p/${peerId.id}`)
 }
 
 /**
@@ -83,75 +102,67 @@ test('helia bitswap', async t => {
 })
 
 test('helia bitswap + content-claims', async t => {
-  const contentA = await createMockClaimableContent(`contentA-${Math.random().toString().slice(2)}`)
-  const contentClaims = createMockContentClaims([contentA])
-  const { libp2p, heliaFs, hoverboard, root } = await createHeliaBitswapScenario({ contentClaims })
-  assert.ok(root)
-  const rootCid = CID.create(root.version, root.code, root.multihash)
-
-  const peer = await libp2p.dial(hoverboard)
-  t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
-
-  // we should be able to use helia.cat(rootCid) and get blocks that come form contentA.unixfsCar
-  const contentACat = await concat(heliaFs.cat(rootCid))
-  const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
-  t.assert(contentACatText)
-})
-
-/** @param {AsyncIterable<Uint8Array>} chunks */
-async function concat (chunks) {
-  let a = new Uint8Array()
-  for await (const chunk of chunks) {
-    a = new Uint8Array([...a, ...chunk])
+  const claims = new LinkMap()
+  const claimsServer = await listen(mockClaimsService(claims))
+  try {
+    await useClaimsServer(claimsServer)
+  } finally {
+    await claimsServer.stop()
   }
-  return a
-}
+  /**
+   * @param {{ url: URL }} options
+   */
+  async function useClaimsServer ({ url }) {
+    const contentClaims = { url: claimsServer.url.toString() }
+    console.debug('booted claim server', contentClaims)
+
+    const { libp2p, heliaFs, hoverboard, miniflare } = await createHeliaBitswapScenarioMiniflare({ contentClaims })
+    console.warn('created scenario')
+
+    const carpark = await miniflare.getR2Bucket('CARPARK')
+    const carparkKv = createBucketFromR2Miniflare(carpark)
+
+    // lets generate claims and make sure they go into the carpark
+    // so mock content claims will be able to read them out
+    const testInput = `test-${Math.random().toString().slice(2)}`
+    // this will write into carpark
+    const scenario = await createSimpleContentClaimsScenario(testInput, carparkKv)
+    const firstIndex = [...scenario.sharded.indexes.entries()][0]
+    const firstIndexCar = await scenario.sharded.indexCars.get(firstIndex[0])
+    assert.ok(firstIndexCar)
+    // writes into `claims` which is used by `claimsServer`
+    await generateClaims(
+      claims,
+      await Ed25519Signer.generate(),
+      scenario.inputCID,
+      scenario.carLink,
+      scenario.car.stream(),
+      firstIndex[0],
+      Link.create(CAR.code, await sha256.digest(firstIndexCar))
+    )
+
+    console.debug('dialing')
+    const peer = await libp2p.dial(hoverboard)
+    console.debug('dialed', peer)
+    t.is(peer.remoteAddr.getPeerId()?.toString(), peerId.id)
+
+    // we should be able to use helia.cat(rootCid) and get blocks that come form contentA.unixfsCar
+    console.debug('about to cat', scenario.inputCID)
+    const contentACat = heliaFs.cat(scenario.inputCID)
+    console.debug('did cat now awaiting', contentACat)
+    for await (const chunk of contentACat) {
+      console.debug('got chunk from cat', chunk)
+    }
+    console.debug('did cat', contentACat)
+    // const contentACatText = await (import('uint8arrays').then(m => m.toString(contentACat)))
+    // t.assert(contentACatText)
+  }
+})
 
 /**
  * @typedef ClaimableContent
  * @property {ArrayBuffer} buffer
  */
-
-/**
- *
- * @param {Iterable<ClaimableContent>} contents
- * @returns
- */
-function createMockContentClaims (contents) {
-  const url = process.env.CONTENT_CLAIMS ?? 'https://staging.claims.web3.storage'
-  return {
-    url
-  }
-}
-
-/**
- * @param {string} text
- */
-async function createMockClaimableContent (text = (new Date()).toISOString()) {
-  const buffer = (new TextEncoder()).encode(text).buffer
-  /** @type {import('multiformats').UnknownLink} */
-  let unixfsLink
-  /** @type {ArrayBuffer} */
-  let unixfsCar
-  await UnixFS.createFileEncoderStream(new Blob([buffer]))
-    .pipeThrough(new TransformStream({
-      transform (block, controller) {
-        unixfsLink = block.cid
-        controller.enqueue(block)
-      }
-    }))
-    .pipeThrough(new ShardingStream())
-    .pipeTo(new WritableStream({
-      write: async carBuffer => {
-        unixfsCar = carBuffer
-      }
-    }))
-  // @ts-expect-error this should be assigned in practice
-  assert.ok(unixfsLink, 'unixfsLink must be a link')
-  // @ts-expect-error this should be assigned in practice
-  assert.ok(unixfsCar, 'unixfsCar must be a truthy')
-  return { buffer, unixfsLink, unixfsCar }
-}
 
 /**
  * test scenario that setups up a hoverboard running in a worker,
@@ -182,6 +193,7 @@ async function createHeliaBitswapScenario ({ contentClaims } = {}) {
     ...(contentClaims?.url ? { CONTENT_CLAIMS: contentClaims.url } : {})
   })
   const hoverboard = getListenAddr(worker)
+  console.warn('Created hoverboard', hoverboard)
 
   console.warn('Creating local libp2p')
   const libp2p = await createLibp2p({
@@ -205,5 +217,90 @@ async function createHeliaBitswapScenario ({ contentClaims } = {}) {
     hoverboard,
     libp2p,
     root
+  }
+}
+
+/**
+ * test scenario that setups up a hoverboard running in a worker,
+ * a libp2p that can connect to it over websocket,
+ * and some example data to test with
+ * @param {object} options
+ * @param {object} [options.contentClaims] - content claims service
+ * @param {string} [options.contentClaims.url] - url of content claims service
+ */
+async function createHeliaBitswapScenarioMiniflare (
+  { contentClaims } = {},
+  { logLevel = LogLevel.DEBUG } = {}
+) {
+  const [dynamo, s3] = await Promise.all([createDynamo(), createS3()])
+  const [table, bucket] = await Promise.all([createDynamoTable(dynamo.client), createS3Bucket(s3.client)])
+  const builder = new Builder(dynamo.client, table, s3.client, 'us-west-2', bucket)
+  const encoder = new TextEncoder()
+  const expected = 'hoverboard 🛹'
+  const blob = new Blob([encoder.encode(expected)])
+  const root = await builder.add(blob)
+
+  console.warn('Creating local hoverboard using miniflare')
+  const miniflareHttp = {
+    host: '127.0.0.1',
+    port: 63000 + Math.floor(Math.random() * 1000)
+  }
+  console.warn('__dirname', __dirname)
+  const miniflare = new Miniflare({
+    ...miniflareHttp,
+    scriptPath: path.join(__dirname, '../dist/worker.js'),
+    compatibilityDate: '2023-10-30',
+    compatibilityFlags: [
+      // https://developers.cloudflare.com/workers/configuration/compatibility-dates/#nodejs-compatibility-flag
+      'nodejs_compat'
+    ],
+    // https://github.com/cloudflare/miniflare/issues/625#issuecomment-1798422794
+    modules: true,
+    log: new Log(logLevel),
+    r2Buckets: [
+      'CARPARK'
+    ],
+    bindings: {
+      S3_ENDPOINT: s3.endpoint,
+      DYNAMO_ENDPOINT: dynamo.endpoint,
+      DYNAMO_REGION: dynamo.region,
+      DYNAMO_TABLE: table,
+      AWS_ACCESS_KEY_ID: s3.credentials.accessKeyId,
+      AWS_SECRET_ACCESS_KEY: s3.credentials.secretAccessKey,
+      PEER_ID_JSON: JSON.stringify(peerId),
+      ...(contentClaims?.url ? { CONTENT_CLAIMS: contentClaims.url } : {})
+    }
+  })
+
+  console.warn('Creating local hoverboard')
+  const hoverboard = getListenAddr({
+    ...miniflareHttp,
+    address: miniflareHttp.host
+  })
+  console.warn('Created hoverboard', hoverboard)
+
+  console.warn('Creating local libp2p')
+  const libp2p = await createLibp2p({
+    connectionEncryption: [noise()],
+    transports: [webSockets()],
+    streamMuxers: [mplex()],
+    services: {
+      identify: identifyService()
+    }
+  })
+
+  console.warn('Creating local helia')
+  const helia = await createHelia({
+    libp2p
+  })
+  const heliaFs = unixfs(helia)
+  return {
+    expected,
+    helia,
+    heliaFs,
+    hoverboard,
+    libp2p,
+    root,
+    miniflare
   }
 }

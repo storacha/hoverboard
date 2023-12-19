@@ -10,7 +10,7 @@ import assert from 'assert'
 
 test('ContentClaimsBlockstore can get block from location claim data URL', async t => {
   const testInput = `test-${Math.random().toString().slice(2)}`
-  const { claims, inputCID } = await createSimpleContentClaimsScenario(testInput)
+  const { claims, inputCID, carpark } = await createSimpleContentClaimsScenario(testInput)
   const claimsServer = await listen(mockClaimsService(claims))
   try {
     await useClaimsServer(claimsServer)
@@ -21,7 +21,7 @@ test('ContentClaimsBlockstore can get block from location claim data URL', async
    * @param {{ url: URL }} options
    */
   async function useClaimsServer ({ url }) {
-    const blocks = new ContentClaimsBlockstore({ url, read: Claims.read })
+    const blocks = new ContentClaimsBlockstore({ url, read: Claims.read, carpark })
     t.assert(await blocks.has(inputCID), '.has(inputCID)')
     const block = await blocks.get(inputCID)
     t.assert(block, 'got block')
@@ -39,6 +39,7 @@ test('ContentClaimsBlockStore can get block from relation claim', async t => {
   assert.ok(firstIndexCar)
   const firstIndexCarLink = Link.create(CAR.code, await sha256.digest(firstIndexCar))
   const claims = await generateClaims(
+    undefined,
     claimsIssuer,
     scenario.inputCID,
     scenario.carLink,
@@ -56,7 +57,11 @@ test('ContentClaimsBlockStore can get block from relation claim', async t => {
    * @param {{ url: URL }} options
    */
   async function useClaimsServer ({ url }) {
-    const blocks = new ContentClaimsBlockstore({ url, read: Claims.read, carpark: scenario.sharded.carpark })
+    const blocks = new ContentClaimsBlockstore({
+      url,
+      read: Claims.read.bind(Claims),
+      carpark: scenario.sharded.carpark
+    })
     t.assert(await blocks.has(scenario.inputCID), '.has(inputCID)')
     const block = await blocks.get(scenario.inputCID)
     t.assert(block, 'got block')

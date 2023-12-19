@@ -47,6 +47,7 @@ export default {
           console.log({ msg: 'peer:disconnect', peer: remotePeer.toString(), ...metrics })
         })
         const onError = async (/** @type {Error} */ err) => {
+          console.error('[!] error with bitswap', err)
           websocket?.close(418, err.message)
           await libp2p.stop()
           if (!err.message.startsWith('Too many subrequests')) {

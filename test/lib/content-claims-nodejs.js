@@ -1,7 +1,7 @@
 import { Map as LinkMap } from 'lnmap'
 import * as Link from 'multiformats/link'
 import { CARWriterStream } from 'carstream/writer'
-import { Writable } from 'node:stream'
+import { Readable, Writable } from 'node:stream'
 import { CARReaderStream } from 'carstream'
 import * as raw from 'multiformats/codecs/raw'
 import * as Block from 'multiformats/block'
@@ -21,6 +21,7 @@ import { encodeVarint } from 'cardex/encoder'
 import { MultiIndexWriter } from 'cardex/multi-index'
 import { TreewalkCarSplitter } from 'carbites/treewalk' // chunk to ~10MB CARs
 import { MultihashIndexSortedWriter } from 'cardex'
+import { createKvBucketFromMap } from '../../src/content-claims-blockstore.js'
 
 /* global WritableStream */
 /* global ReadableStream */
@@ -50,15 +51,9 @@ export const mockClaimsService = (
   const listener = async (req, res) => {
     const content = Link.parse(String(req.url?.split('/')[2]))
     const blocks = [...claims.get(content) ?? []]
-    const readable = new ReadableStream({
-      pull (controller) {
-        const block = blocks.shift()
-        if (!block) return controller.close()
-        controller.enqueue(block)
-      }
-    })
-    await readable
-      .pipeThrough(new CARWriterStream())
+    await Readable.toWeb(Readable.from(blocks))
+      // @ts-expect-error due to getReader.closed Promise<void> vs Promise<undefined>
+      .pipeThrough(new CARWriterStream(blocks.map(b => b.cid)))
       .pipeTo(Writable.toWeb(res))
   }
   return { claims, setClaims, listener }
@@ -78,6 +73,7 @@ const Hashers = {
 }
 
 /**
+ * @param {Claims} claims
  * @param {import('@ucanto/interface').Signer} signer
  * @param {import('multiformats').UnknownLink} dataCid
  * @param {import('cardex/api').CARLink} carCid
@@ -85,10 +81,7 @@ const Hashers = {
  * @param {import('multiformats').Link} indexCid
  * @param {import('cardex/api').CARLink} indexCarCid
  */
-export const generateClaims = async (signer, dataCid, carCid, carStream, indexCid, indexCarCid) => {
-  /** @type {Claims} */
-  const claims = new LinkMap()
-
+export const generateClaims = async (claims = new LinkMap(), signer, dataCid, carCid, carStream, indexCid, indexCarCid) => {
   // partition claim for the data CID
   claims.set(dataCid, [
     await encodeInvocationBlock(Assert.partition.invoke({
@@ -174,17 +167,22 @@ export async function encodeInvocationBlock (invocation) {
 
 /**
  * @param {string} input - text input to use as the sample content that will be encoded into a car file
+ * @param {import('../../src/api.js').KVBucketWithRangeQueries} [carpark] - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {object} options
  * @param {import('@ucanto/interface').Signer} [options.signer]
  */
-export async function createSimpleContentClaimsScenario (input, options = {}) {
+export async function createSimpleContentClaimsScenario (
+  input,
+  carpark = createKvBucketFromMap(/** @type {Map<string,Uint8Array>} */ (new Map())),
+  options = {}
+) {
   const {
     signer = await Ed25519Signer.generate()
   } = options
 
   const inputBuffer = (new TextEncoder()).encode(input)
   const inputBlock = await Block.encode({ value: inputBuffer, codec: raw, hasher: sha256 })
-  const inputCID = await inputBlock.cid
+  const inputCID = await Promise.resolve(inputBlock.cid)
   const createInputBlockStream = () => {
     /** @type {ReadableStream<import('carstream/api').Block>} */
     const blocks = new ReadableStream({
@@ -230,12 +228,17 @@ export async function createSimpleContentClaimsScenario (input, options = {}) {
     return claims
   })
 
-  const sharded = await shardCar({ car, carLink: Promise.resolve(carLink) })
+  const sharded = await shardCar({
+    car,
+    carLink: Promise.resolve(carLink),
+    carpark
+  })
 
   return {
     inputCID,
     inputBlock,
     car,
+    carpark,
     carLink,
     claims,
     signer,
@@ -298,7 +301,7 @@ const DEFAULT_SHARD_SIZE = 1024 * 1024 * 10
  * @param {number} [options.shardSize]
  * @param {ShardLinkToShardBytesMap} [options.shards]
  * @param {Map<string, Uint8Array>} [options.dudewhere]
- * @param {Map<string, Uint8Array>} [options.carpark] - keys like `${cid}/${cid}.car` and values are car bytes
+ * @param {import('../../src/api.js').KVBucketWithRangeQueries} options.carpark - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Map<string, Uint8Array>} [options.satnav]
  * @param {LinkMap<import('multiformats').Link<unknown,number,number,1>, Promise<Uint8Array>>} [options.indexes]
  * @param {LinkMap<import('multiformats').UnknownLink, Promise<Uint8Array>>} [options.indexCars]
@@ -309,7 +312,7 @@ async function shardCar ({
   car,
   carLink = Promise.resolve().then(async () => Link.create(CAR.code, await sha256.digest(new Uint8Array(await car.arrayBuffer())))),
   cars = new LinkMap(),
-  carpark = new Map(),
+  carpark,
   dudewhere = new Map(),
   indexes = new LinkMap(),
   indexCars = new LinkMap(),
@@ -328,7 +331,7 @@ async function shardCar ({
     shards.set(shardCarCid, shardCarBytes)
 
     // park the car in carpark at conventional key
-    carpark.set(`${shardCarCid}/${shardCarCid}.car`, await shardCarBytes)
+    await carpark.set(`${shardCarCid}/${shardCarCid}.car`, await shardCarBytes)
 
     // create index for shard
     const indexer = await CarIndexer.fromBytes(await shardCarBytes)
@@ -346,7 +349,7 @@ async function shardCar ({
     satnav.set(`${shardCarCid}/${shardCarCid}.car.idx`, await indexBytes)
 
     // add shard index *car* to carpark
-    carpark.set(`${indexCar.cid}/${indexCar.cid}.car`, indexCar.bytes)
+    await carpark.set(`${indexCar.cid}/${indexCar.cid}.car`, indexCar.bytes)
 
     // keep track of shard order
     shardOrder.push({
