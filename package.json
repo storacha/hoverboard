@@ -13,7 +13,7 @@
     "lint": "standard",
     "lint:fix": "npm run lint -- --fix",
     "prepare": "npm run build",
-    "pretest": "npm run build:wrangler",
+    "pretest": "npm run build:wrangler && npm run lint",
     "test": "c8 ava --serial --no-worker-threads",
     "dial": "node example/dial.js"
   },
