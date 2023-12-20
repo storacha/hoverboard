@@ -6,10 +6,8 @@ import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
 import { asyncIterableReader, readBlockHead } from '@ipld/car/decoder'
 import errCode from 'err-code'
-import { Block } from 'multiformats/block'
 
 /* global ReadableStream */
-/* global WritableStream */
 /* global TransformStream */
 
 /**
@@ -189,7 +187,7 @@ async function * fetchBlocksForLocationClaims (claims, link) {
                   claim,
                   location,
                   block,
-                  response,
+                  response
                 })
               }
             }
@@ -247,10 +245,8 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
 
       // if the index is not included in the claim, look for it in the CARPARK R2 BUcket
       if (!indexBlock && includes.parts?.length) {
-
         // the index may be in several part Blocks we'll need to concatenate
         for (const part of includes.parts) {
-
           // part is a CARLink to a car-multihash-index-sorted
           // look up a CAR containing that part CID via CARPARK
           const blob = await carpark.get(`${part}/${part}.car`).then(r => r.blob())
