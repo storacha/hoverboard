@@ -1,6 +1,8 @@
 # hoverboard 🛹
 
-An IPFS Bitswap Peer in Cloudflare Workers
+An [IPFS Bitswap] Peer Cloudflare Worker
+
+![hoverboard overview diagram](./docs/hoverboard.svg)
 
 ## Getting started
 
@@ -48,3 +50,4 @@ Set the following with `wrangler secret put <key>`
 - AWS_SECRET_ACCESS_KEY - aws creds
 - PEER_ID_JSON - stringified json peerId spec for this node
 
+[IPFS Bitswap]: https://specs.ipfs.tech/bitswap-protocol/
