@@ -238,6 +238,7 @@ function getAwsCredentials (env) {
 /**
  * compose several blockstores together into a read-only composition.
  * methods will call the blockstores in the order they are passed to the constructor.
+ * @implements {Blockstore}
  */
 export class CompositeBlockstore {
   /**
@@ -245,7 +246,6 @@ export class CompositeBlockstore {
    */
   constructor (blockstores) {
     this.blockstores = blockstores
-    void /** @type {Blockstore} */ (this) // eslint-disable-line no-void
   }
 
   /**

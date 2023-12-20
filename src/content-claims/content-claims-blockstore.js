@@ -6,6 +6,7 @@ import * as Link from 'multiformats/link'
 import * as raw from 'multiformats/codecs/raw'
 import { asyncIterableReader, readBlockHead } from '@ipld/car/decoder'
 import errCode from 'err-code'
+import { Block } from 'multiformats/block'
 
 /* global ReadableStream */
 /* global WritableStream */
@@ -110,7 +111,7 @@ export class ContentClaimsBlockstore extends AbstractBlockStore {
   async get (link) {
     const claims = await this.#read(link, { serviceURL: this.#url })
     // eslint-disable-next-line no-unreachable-loop
-    for await (const block of claimsGetBlock(claims, link, this.#carpark)) {
+    for await (const block of claimsGetBytes(claims, link, this.#carpark)) {
       return block
     }
     throw errCode(new Error('not found'), 'ERR_NOT_FOUND')
@@ -155,7 +156,12 @@ function createIndexEntryMap (map = new Map()) {
  * get index for a link from a content claims client
  * @param {AsyncIterable<import('../api.js').LocationClaim>|Iterable<import('../api.js').LocationClaim>} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
- * @returns {AsyncGenerator<Uint8Array>}
+ * @returns {AsyncGenerator<{
+ *   claim: import('@web3-storage/content-claims/client/api').LocationClaim
+ *   location: string
+ *   response: Response
+ *   block: import('carstream/api').Block
+ * }>}
  */
 async function * fetchBlocksForLocationClaims (claims, link) {
   /**
@@ -166,79 +172,92 @@ async function * fetchBlocksForLocationClaims (claims, link) {
    *   block: import('carstream/api').Block
    * }>}
    */
-  const locatedBlocks = createReadableStream(claims)
+  const locatedClaims = createReadableStream(claims)
     // claim -> [claim, location]
     .pipeThrough(new TransformStream({
     /**
       * @param {import('@web3-storage/content-claims/client/api').LocationClaim} claim
       */
       async transform (claim, controller) {
-        for (const location of claim.location) { controller.enqueue([claim, location]) }
-      }
-    }))
-    // [claim, location] -> [claim, location, ok response]
-    .pipeThrough(new TransformStream({
-    /** @param {[claim: import('@web3-storage/content-claims/client/api').Claim, location: string]} chunk */
-      async transform ([claim, location], controller) {
-        const response = await fetch(location, { headers: { accept: 'application/vnd.ipld.car' } })
-        if (response.ok) {
-          return controller.enqueue([claim, location, response])
-        }
-        throw new Error(`unexpected not-ok response ${response}`)
-      }
-    }))
-    // [claim, location, ok response] -> { claim, location, ok response, block }
-    .pipeThrough(new TransformStream({
-    /** @param {[claim: import('@web3-storage/content-claims/client/api').LocationClaim, location: string, response: Response]} chunk */
-      async transform ([claim, location, response], controller) {
-        await response.body?.pipeThrough(new CARReaderStream()).pipeTo(new WritableStream({
-          write: (block) => {
-          // @todo validate that block.bytes hashes to `link`
-            controller.enqueue({ claim, location, response, block })
+        for (const location of claim.location) {
+          try {
+            const response = await fetch(location, { headers: { accept: 'application/vnd.ipld.car' } })
+            if (response.ok) {
+              const blocks = response.body?.pipeThrough(new CARReaderStream())
+              for await (const block of blocks ?? []) {
+                controller.enqueue({
+                  claim,
+                  location,
+                  block,
+                  response,
+                })
+              }
+            }
+          } catch (error) {
+            controller.error(error)
+            console.warn('error in fetchBlocksForLocationClaims fetching location', location)
           }
-        }))
+        }
       }
     }))
-  for await (const locatedBlock of locatedBlocks) {
-    yield locatedBlock.block.bytes
-  }
+  yield * locatedClaims
 }
 
 /**
+ * Given a bunch of RelationClaims about, and a specific hash `link`, asyncIterate out any bytes that match `link`
+ * that can be found based on the hints in the RelationClaims.
+ *
+ * When the block for the link comes from N shards,
+ * A RelationClaim's parts property will have an entry for each.
+ *
+ * And the part entry has
+ * * content: link to this shard (often as a CAR)
+ * * includes: a link to an index describing which blocks are in the CAR at `content`
+ *
+ * So this involves
+ *
+ *
  * @param {import('../api.js').RelationClaim[]} claims
  * @param {UnknownLink} link - link to answer whether the content-claims at `url` has blocks for `link`
  * @param {import('../kv-bucket/api.js').KVBucketWithRangeQueries} carpark - keys like `${cid}/${cid}.car` and values are car bytes
  * @param {Index & import('../api.js').IndexMap} index - map of
- * @returns {AsyncGenerator<Uint8Array>}
+ * @returns {AsyncGenerator<import('carstream/api').Block>}
  */
 async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
   for await (const claim of claims) {
-    const blocks = [...claim.export()]
+    const claimBlocks = [...claim.export()]
 
-    const relationClaimPartBlocks = []
-
-    // each part is a tuple of CAR CID (content) & CARv2 index CID (includes)
+    // iterate through claims trying to resolve them to blocks committed to by `link`
     for (const { content, includes } of claim.parts) {
-      if (content.code !== CAR.code) continue
-      if (!includes) continue
-
+      if (content.code !== CAR.code) {
+        console.warn(`relation claim part content has unexpected codec ${content.code}. Skipping.`)
+        continue
+      }
+      if (!includes) {
+        console.warn(`relation claim part includes is falsy (${includes}). Expected a link to an index of what is included in content. Skipping content ${content}`)
+        continue
+      }
       if (includes.content.code !== MultihashIndexSortedReader.codec) {
-        throw new Error('relationClaim.includes is link to car-multihash-index-sorted')
+        throw new Error(`expected relationClaim.includes to be link to car-multihash-index-sorted, but got ${includes.content.code}`)
       }
 
+      // Look for the blocks for the `includes` link already embedded in the Claim?
       /** @type {{ cid: import('multiformats').UnknownLink, bytes: Uint8Array }|undefined} */
-      let indexBlock = blocks.find(b => b.cid.equals(includes.content))
+      let indexBlock = claimBlocks.find(b => b.cid.equals(includes.content))
 
-      // if the index is not included in the claim, it should be in CARPARK
+      // if the index is not included in the claim, look for it in the CARPARK R2 BUcket
       if (!indexBlock && includes.parts?.length) {
-        const includeParts = []
+
+        // the index may be in several part Blocks we'll need to concatenate
         for (const part of includes.parts) {
+
           // part is a CARLink to a car-multihash-index-sorted
-          const partCarParkPath = `${part}/${part}.car`
-          const obj = await carpark.get(partCarParkPath).then(r => r.blob())
-          if (!obj) continue
-          const partBlocks = await CAR.decode(new Uint8Array(await obj.arrayBuffer()))
-          includeParts.push(...partBlocks)
+          // look up a CAR containing that part CID via CARPARK
+          const blob = await carpark.get(`${part}/${part}.car`).then(r => r.blob())
+
+          // if the part wasn't in carpark, go to next par
+          if (!blob) continue
+          const partBlocks = await CAR.decode(new Uint8Array(await blob.arrayBuffer()))
           indexBlock = indexBlock ?? partBlocks.find(b => b.cid.equals(includes.content))
           if (indexBlock) {
             // we found the indexBlock we need. No need to keep looping over parts
@@ -257,7 +276,6 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
           const entryIndexKey = Link.create(raw.code, entry.multihash)
           index.set(entryIndexKey, entry)
         }
-        relationClaimPartBlocks.push(indexBlock)
       }
 
       // ok maybe now the index has the cid we were originally looking for?
@@ -265,7 +283,7 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
         const blockstore = new R2Blockstore(carpark, index)
         const block = await blockstore.get(link)
         if (block) {
-          yield block.bytes
+          yield block
         }
       }
     }
@@ -280,14 +298,18 @@ async function * fetchBlocksForRelationClaims (claims, link, carpark, index) {
  * @param {Index & import('../api.js').IndexMap} [index] - map of
  * @returns {AsyncGenerator<Uint8Array>}
  */
-async function * claimsGetBlock (claims, link, carpark, index = createIndexEntryMap()) {
+async function * claimsGetBytes (claims, link, carpark, index = createIndexEntryMap()) {
   for await (const claim of claims) {
     switch (claim.type) {
       case 'assert/location':
-        yield * fetchBlocksForLocationClaims([claim], link)
+        for await (const { block } of fetchBlocksForLocationClaims([claim], link)) {
+          yield block.bytes
+        }
         break
       case 'assert/relation':
-        yield * fetchBlocksForRelationClaims([claim], link, carpark, index)
+        for await (const block of fetchBlocksForRelationClaims([claim], link, carpark, index)) {
+          yield block.bytes
+        }
         break
       default:
         // donno about this claim type
