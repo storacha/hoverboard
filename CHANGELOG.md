@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/web3-storage/hoverboard/compare/v1.3.1...v1.3.2) (2024-05-17)
+
+
+### Bug Fixes
+
+* read blobs ([#24](https://github.com/web3-storage/hoverboard/issues/24)) ([016faa1](https://github.com/web3-storage/hoverboard/commit/016faa198bae483a7087252806fe8ef203e3e242))
+
 ## [1.3.1](https://github.com/web3-storage/hoverboard/compare/v1.3.0...v1.3.1) (2024-05-17)
 
 
