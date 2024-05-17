@@ -68,6 +68,9 @@ export class DynamoIndex {
     }
     const items = (res.Items ?? []).map(item => {
       const { carpath, offset, length } = unmarshall(item)
+      if (carpath.endsWith('.blob')) {
+        return { region: 'auto', bucket: 'carpark-prod-0', key: new URL(carpath).pathname.slice(1), offset, length }
+      }
       const [region, bucket, ...rest] = carpath.split('/')
       return { region, bucket, key: rest.join('/'), offset, length }
     })

@@ -136,8 +136,7 @@ export class DagHausBlockStore {
 
     for (const { key, offset, length } of idxEntries) {
       if (key.endsWith('.blob') && this.carpark) {
-        const blobKey = new URL(key).pathname.slice(1)
-        const obj = await this.carpark.get(blobKey, { range: { offset, length } })
+        const obj = await this.carpark.get(key, { range: { offset, length } })
         if (obj) {
           const buff = await obj.arrayBuffer()
           const bytes = new Uint8Array(buff)
