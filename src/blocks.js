@@ -1,24 +1,11 @@
 /* eslint-env serviceworker */
-import { S3Client } from '@aws-sdk/client-s3'
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
-import { digest } from 'multiformats'
-import { CID } from 'multiformats/cid'
-import { fromString } from 'uint8arrays/from-string'
-import { DynamoIndex, CachingIndex } from './s3/block-index.js'
-import { DynamoBlockstore } from './s3/blockstore.js'
+import { CachingIndex } from './dag-index/caching.js'
+import { ContentClaimsIndex } from './dag-index/content-claims.js'
 import { DenyingBlockStore } from './deny.js'
-
-const CAR = 0x202
 
 /**
  * @typedef {import('multiformats').UnknownLink} UnknownLink
  * @typedef {import('./worker.js').Env} Env
- *
- * @typedef {object} BlockLocation
- * @property {string} blockmultihash e.g zQmXWxE2sdWFeLHfVEp6bb6kib9YWWEvsaAJSgoExKrPVXD
- * @property {string} carpath e.g us-east-2/dotstorage-staging-0/raw/bafybeieiltf3tnfdyvdutyolzhfahphgevnjsso26nulfqxtkptyefq3za/315318734258473269/ciqjxmllx5y73brw6mv3pkvd7sotfk2turkupkq7tsgygrdy2yxibri.car
- * @property {number} length e.g 58 (bytes)
- * @property {number} offset e.g 96 (bytes)
  *
  * @typedef {object} Blockstore
  * @prop {(cid: UnknownLink) => Promise<boolean>} has
@@ -31,11 +18,10 @@ const CAR = 0x202
  * @param {import('./metrics.js').Metrics} metrics
  */
 export async function getBlockstore (env, ctx, metrics) {
-  const dynamo = new DynamoIndex(getDynamoClient(env), env.DYNAMO_TABLE, metrics, { maxEntries: 3, preferRegion: 'us-west-2' })
-  const index = new CachingIndex(dynamo, await caches.open(`dynamo:${env.DYNAMO_TABLE}`), ctx, metrics)
-  const s3 = new DynamoBlockstore(index, getS3Clients(env))
-  const r2 = new DagHausBlockStore(index, env.CARPARK, s3, metrics)
-  const cached = new CachingBlockStore(r2, await caches.open('blockstore:bytes'), ctx, metrics)
+  const claimsIndex = new ContentClaimsIndex()
+  const index = new CachingIndex(claimsIndex, await caches.open('index'), ctx, metrics)
+  const blocks = new DagHausBlockStore(index, metrics)
+  const cached = new CachingBlockStore(blocks, await caches.open('blockstore:bytes'), ctx, metrics)
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
 }
 
@@ -105,134 +91,32 @@ export class CachingBlockStore {
  */
 export class DagHausBlockStore {
   /**
-   * @param {import('./s3/block-index.js').BlockIndex} dynamo
-   * @param {R2Bucket} carpark
-   * @param {import('./s3/blockstore.js').CarBlockstore} s3
+   * @param {import('./dag-index/api.js').Index} index
    * @param {import('./metrics.js').Metrics} metrics
    */
-  constructor (dynamo, carpark, s3, metrics) {
-    this.dynamo = dynamo
-    this.carpark = carpark
-    this.s3 = s3
+  constructor (index, metrics) {
+    this.index = index
     this.metrics = metrics
   }
 
-  /**
-   * Check for dynamo index. Soon to be content clams.
-   * @param {UnknownLink} cid
-   */
+  /** @param {UnknownLink} cid */
   async has (cid) {
-    const res = await this.dynamo.get(cid)
-    return res.length > 0
+    return Boolean(await this.index.get(cid))
   }
 
-  /**
-   * Try R2. Fallback to S3.
-   * @param {UnknownLink} cid
-   */
+  /** @param {UnknownLink} cid */
   async get (cid) {
-    const idxEntries = await this.dynamo.get(cid)
-    if (idxEntries.length === 0) return
+    const idxEntry = await this.index.get(cid)
+    if (!idxEntry) return
 
-    for (const { key, offset, length } of idxEntries) {
-      if (key.endsWith('.blob') && this.carpark) {
-        const obj = await this.carpark.get(key, { range: { offset, length } })
-        if (obj) {
-          const buff = await obj.arrayBuffer()
-          const bytes = new Uint8Array(buff)
-          this.metrics.blocks++
-          this.metrics.blockBytes += bytes.byteLength
-          this.metrics.blocksR2++
-          this.metrics.blockBytesR2 += bytes.byteLength
-          return bytes
-        }
+    for (const url of idxEntry.site.location) {
+      const headers = { Range: `bytes=${idxEntry.site.range.offset}-${idxEntry.site.range.offset + idxEntry.site.range.length - 1}` }
+      const res = await fetch(url, { headers })
+      if (!res.ok) {
+        console.warn(`failed to fetch ${url}: ${res.status} ${await res.text()}`)
+        continue
       }
-
-      const carKey = toCarKey(key)
-      if (carKey && this.carpark) {
-        const obj = await this.carpark.get(carKey, { range: { offset, length } })
-        if (obj) {
-          const buff = await obj.arrayBuffer()
-          const bytes = new Uint8Array(buff)
-          this.metrics.blocks++
-          this.metrics.blockBytes += bytes.byteLength
-          this.metrics.blocksR2++
-          this.metrics.blockBytesR2 += bytes.byteLength
-          return bytes
-        }
-      }
+      return new Uint8Array(await res.arrayBuffer())
     }
-
-    // fallback to s3
-    const block = await this.s3.get(cid, idxEntries)
-    if (!block) return undefined
-    this.metrics.blocks++
-    this.metrics.blockBytes += block.bytes.byteLength
-    this.metrics.blocksS3++
-    this.metrics.blockBytesS3 += block.bytes.byteLength
-    return block.bytes
   }
-}
-
-/**
- * Convert legacy key to car cid key where possible
- * @param {string} key raw/bafybeieiltf3tnfdyvdutyolzhfahphgevnjsso26nulfqxtkptyefq3za/315318734258473269/ciqjxmllx5y73brw6mv3pkvd7sotfk2turkupkq7tsgygrdy2yxibri.car
- * @returns {string | undefined} e.g bagbaieratoywxp3r7wddn4zlw6vkh7e5gkvvhjcvi6vb7henqnchrvroqdcq/bagbaieratoywxp3r7wddn4zlw6vkh7e5gkvvhjcvi6vb7henqnchrvroqdcq.car
- */
-export function toCarKey (key) {
-  if (!key.endsWith('.car')) {
-    return undefined
-  }
-  const keyParts = key.split('/')
-  if (keyParts.at(0) === 'raw') {
-    const carName = keyParts.at(-1)
-    if (!carName) {
-      return undefined
-    }
-    const carCid = toCarCid(carName.slice(0, -4)) // trim .car suffix
-    return `${carCid}/${carCid}.car`
-  }
-  if (keyParts.at(0)?.startsWith('bag')) {
-    // already a carKey
-    return keyParts.join('/')
-  }
-}
-
-/**
- * Convert a base32 (without multibase prefix!) sha256 multihash to a CAR CID
- *
- * @param {string} base32Multihash - e.g ciqjxmllx5y73brw6mv3pkvd7sotfk2turkupkq7tsgygrdy2yxibri
- */
-export function toCarCid (base32Multihash) {
-  const mh = digest.decode(fromString(base32Multihash, 'base32'))
-  return CID.create(1, CAR, mh)
-}
-
-/**
- * @param {Env} env
- */
-export function getDynamoClient (env) {
-  if (!env.DYNAMO_REGION) throw new Error('missing environment variable: DYNAMO_REGION')
-  if (!env.DYNAMO_TABLE) throw new Error('missing environment variable: DYNAMO_TABLE')
-  const credentials = getAwsCredentials(env)
-  const endpoint = env.DYNAMO_ENDPOINT
-  return new DynamoDBClient({ endpoint, region: env.DYNAMO_REGION, credentials })
-}
-
-/**
- * @param {Env} env
- */
-export function getS3Clients (env) {
-  const regions = env.S3_REGIONS ? env.S3_REGIONS.split(',') : ['us-west-2', 'us-east-1', 'us-east-2']
-  const endpoint = env.S3_ENDPOINT
-  const credentials = getAwsCredentials(env)
-  const config = { endpoint, forcePathStyle: !!endpoint, credentials }
-  return Object.fromEntries(regions.map(r => [r, new S3Client({ ...config, region: r })]))
-}
-
-/** @param {Env} env */
-function getAwsCredentials (env) {
-  const accessKeyId = env.AWS_ACCESS_KEY_ID
-  const secretAccessKey = env.AWS_SECRET_ACCESS_KEY
-  return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined
 }
