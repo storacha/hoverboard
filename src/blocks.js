@@ -135,6 +135,20 @@ export class DagHausBlockStore {
     if (idxEntries.length === 0) return
 
     for (const { key, offset, length } of idxEntries) {
+      if (key.endsWith('.blob') && this.carpark) {
+        const blobKey = new URL(key).pathname.slice(1)
+        const obj = await this.carpark.get(blobKey, { range: { offset, length } })
+        if (obj) {
+          const buff = await obj.arrayBuffer()
+          const bytes = new Uint8Array(buff)
+          this.metrics.blocks++
+          this.metrics.blockBytes += bytes.byteLength
+          this.metrics.blocksR2++
+          this.metrics.blockBytesR2 += bytes.byteLength
+          return bytes
+        }
+      }
+
       const carKey = toCarKey(key)
       if (carKey && this.carpark) {
         const obj = await this.carpark.get(carKey, { range: { offset, length } })
