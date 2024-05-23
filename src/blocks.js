@@ -22,7 +22,7 @@ import * as Location from './location.js'
 export async function getBlockstore (env, ctx, metrics) {
   const locator = ContentClaimsLocator.create({ serviceURL: env.CONTENT_CLAIMS_URL ? new URL(env.CONTENT_CLAIMS_URL) : undefined })
   const cachingLocator = new CachingLocator(locator, await caches.open('index'), ctx, metrics)
-  const blocks = new DagHausBlockStore(cachingLocator, metrics)
+  const blocks = new BlockStore(cachingLocator, metrics)
   const cached = new CachingBlockStore(blocks, await caches.open('blockstore:bytes'), ctx, metrics)
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
 }
@@ -128,7 +128,7 @@ export class CachingBlockStore {
   }
 }
 
-export class DagHausBlockStore {
+export class BlockStore {
   /**
    * @param {import('@web3-storage/blob-fetcher').Locator} locator
    * @param {import('./metrics.js').Metrics} metrics
