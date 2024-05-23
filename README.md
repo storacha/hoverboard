@@ -46,8 +46,6 @@ Fetching bafybeicm3skx7ps2bwkh56l3mirh3hu4hmkfttfwjkmk4cr25sxtf2jmby
 
 Set the following with `wrangler secret put <key>`
 
-- AWS_ACCESS_KEY_ID - aws creds
-- AWS_SECRET_ACCESS_KEY - aws creds
-- PEER_ID_JSON - stringified json peerId spec for this node
+- `PEER_ID_JSON` - stringified json peerId spec for this node
 
 [IPFS Bitswap]: https://specs.ipfs.tech/bitswap-protocol/

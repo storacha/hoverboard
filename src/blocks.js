@@ -1,7 +1,9 @@
 /* eslint-env serviceworker */
-import { CachingIndex } from './dag-index/caching.js'
-import { ContentClaimsIndex } from './dag-index/content-claims.js'
+import { base58btc } from 'multiformats/bases/base58'
 import { DenyingBlockStore } from './deny.js'
+import * as BatchingFetcher from '@web3-storage/blob-fetcher/fetcher/batching'
+import * as ContentClaimsLocator from '@web3-storage/blob-fetcher/locator/content-claims'
+import * as Location from './location.js'
 
 /**
  * @typedef {import('multiformats').UnknownLink} UnknownLink
@@ -18,11 +20,53 @@ import { DenyingBlockStore } from './deny.js'
  * @param {import('./metrics.js').Metrics} metrics
  */
 export async function getBlockstore (env, ctx, metrics) {
-  const claimsIndex = new ContentClaimsIndex()
-  const index = new CachingIndex(claimsIndex, await caches.open('index'), ctx, metrics)
-  const blocks = new DagHausBlockStore(index, metrics)
+  const locator = ContentClaimsLocator.create({ serviceURL: env.CONTENT_CLAIMS_URL ? new URL(env.CONTENT_CLAIMS_URL) : undefined })
+  const cachingLocator = new CachingLocator(locator, await caches.open('index'), ctx, metrics)
+  const blocks = new DagHausBlockStore(cachingLocator, metrics)
   const cached = new CachingBlockStore(blocks, await caches.open('blockstore:bytes'), ctx, metrics)
   return env.DENYLIST ? new DenyingBlockStore(env.DENYLIST, cached) : cached
+}
+
+export class CachingLocator {
+  /**
+   * @param {import('@web3-storage/blob-fetcher').Locator} locator
+   * @param {Cache} cache
+   * @param {ExecutionContext} ctx
+   * @param {import('./metrics.js').Metrics} metrics
+   */
+  constructor (locator, cache, ctx, metrics) {
+    this.locator = locator
+    this.cache = cache
+    this.ctx = ctx
+    this.metrics = metrics
+  }
+
+  /** @param {import('multiformats').MultihashDigest} digest */
+  async locate (digest) {
+    const key = this.toCacheKey(digest)
+    const cached = await this.cache.match(key)
+    if (cached) {
+      this.metrics.indexes++
+      this.metrics.indexesCached++
+      return cached.json()
+    }
+    const res = await this.locator.locate(digest)
+    if (res.ok) {
+      this.metrics.indexes++
+      this.ctx.waitUntil(this.cache.put(key, new Response(Location.encode(res.ok))))
+    }
+    return res
+  }
+
+  /** @param {import('multiformats').MultihashDigest} digest */
+  toCacheKey (digest) {
+    const key = base58btc.encode(digest.bytes)
+    const cacheUrl = new URL(key, 'https://index.web3.storage')
+    return new Request(cacheUrl.toString(), {
+      method: 'GET',
+      headers: new Headers({ 'content-type': 'application/octet-stream' })
+    })
+  }
 }
 
 /**
@@ -84,39 +128,30 @@ export class CachingBlockStore {
   }
 }
 
-/**
- * A blockstore that copes with the dag.haus bucket legacy.
- * Also adapts car block style blockstore api that returns {cid, bytes}
- * to one that returns just the bytes to blend with miniswap api.
- */
 export class DagHausBlockStore {
   /**
-   * @param {import('./dag-index/api.js').Index} index
+   * @param {import('@web3-storage/blob-fetcher').Locator} locator
    * @param {import('./metrics.js').Metrics} metrics
    */
-  constructor (index, metrics) {
-    this.index = index
+  constructor (locator, metrics) {
+    this.fetcher = BatchingFetcher.create(locator)
+    this.locator = locator
     this.metrics = metrics
   }
 
   /** @param {UnknownLink} cid */
   async has (cid) {
-    return Boolean(await this.index.get(cid))
+    const res = await this.locator.locate(cid.multihash)
+    return Boolean(res.ok)
   }
 
   /** @param {UnknownLink} cid */
   async get (cid) {
-    const idxEntry = await this.index.get(cid)
-    if (!idxEntry) return
-
-    for (const url of idxEntry.site.location) {
-      const headers = { Range: `bytes=${idxEntry.site.range.offset}-${idxEntry.site.range.offset + idxEntry.site.range.length - 1}` }
-      const res = await fetch(url, { headers })
-      if (!res.ok) {
-        console.warn(`failed to fetch ${url}: ${res.status} ${await res.text()}`)
-        continue
-      }
-      return new Uint8Array(await res.arrayBuffer())
+    const res = await this.fetcher.fetch(cid.multihash)
+    if (res.ok) {
+      this.metrics.blocksFetched++
+      this.metrics.blockBytesFetched += res.ok.bytes.byteLength
     }
+    return res.ok?.bytes
   }
 }

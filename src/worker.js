@@ -7,16 +7,9 @@ import { Metrics } from './metrics.js'
 
 /**
  * @typedef {object} Env
- * @prop {string} DYNAMO_TABLE - block index table name
- * @prop {string} DYNAMO_REGION - block index table region
- * @prop {string} [DYNAMO_ENDPOINT] - override the dynamo api url
- * @prop {string} [S3_ENDPOINT] - override the s3 api url
- * @prop {string} [S3_REGIONS] - override the list of s3 regions to fetch blocks from
- * @prop {R2Bucket} CARPARK - R2 binding for CAR bucket
  * @prop {KVNamespace} DENYLIST - KV binding for denylist
- * @prop {string} AWS_ACCESS_KEY_ID - secret key id
- * @prop {string} AWS_SECRET_ACCESS_KEY - secret key
  * @prop {string} PEER_ID_JSON - secret stringified json peerId spec for this node
+ * @prop {string} CONTENT_CLAIMS_URL
  */
 
 /** @type {ExportedHandler<Env>} */
@@ -55,7 +48,6 @@ export default {
         enableBitswap(libp2p, bs, onError)
         const listener = getWebSocketListener(transport, listenAddr)
         const res = await listener.handleRequest(request)
-        // @ts-expect-error res will have a raw websocket server on it if worked.
         websocket = res.websocket
         return res
       }
