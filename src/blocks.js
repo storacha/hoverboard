@@ -149,9 +149,10 @@ export class DagHausBlockStore {
   async get (cid) {
     const res = await this.fetcher.fetch(cid.multihash)
     if (res.ok) {
+      const bytes = await res.ok.bytes()
       this.metrics.blocksFetched++
-      this.metrics.blockBytesFetched += res.ok.bytes.byteLength
+      this.metrics.blockBytesFetched += bytes.byteLength
+      return bytes
     }
-    return res.ok?.bytes
   }
 }
