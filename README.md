@@ -2,7 +2,7 @@
 
 An [IPFS Bitswap] Peer Cloudflare Worker
 
-![hoverboard overview diagram](./docs/hoverboard.svg)
+![hoverboard overview diagram](./docs/hoverboard.png)
 
 ## Getting started
 
