@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/web3-storage/hoverboard/compare/v1.3.2...v2.0.0) (2024-05-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* hoverboard no longer uses R2 binding, and does not talk to DynamoDB or S3. Instead it uses content claims to determine block locations.
+
+### Features
+
+* use content claims ([#26](https://github.com/web3-storage/hoverboard/issues/26)) ([c25860c](https://github.com/web3-storage/hoverboard/commit/c25860c31ca41f328468c034c42cd8b75182c466))
+
 ## [1.3.2](https://github.com/web3-storage/hoverboard/compare/v1.3.1...v1.3.2) (2024-05-17)
 
 
