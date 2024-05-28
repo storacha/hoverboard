@@ -38,7 +38,7 @@
     "@libp2p/mplex": "^8.0.4",
     "@libp2p/peer-id-factory": "^2.0.4",
     "@multiformats/uri-to-multiaddr": "^7.0.0",
-    "@web3-storage/blob-fetcher": "^2.0.0",
+    "@web3-storage/blob-fetcher": "^2.1.2",
     "@web3-storage/content-claims": "^4.0.5",
     "cf-libp2p-ws-transport": "^1.1.1",
     "events": "^3.3.0",
