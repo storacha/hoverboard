@@ -1,65 +1,27 @@
-import { unstable_dev as testWorker } from 'wrangler'
-import { multiaddr } from '@multiformats/multiaddr'
-import { noise } from '@chainsafe/libp2p-noise'
-import { webSockets } from '@libp2p/websockets'
-import { identifyService } from 'libp2p/identify'
-import { createLibp2p } from 'libp2p'
-import { mplex } from '@libp2p/mplex'
+import anyTest from 'ava'
 import { peerId } from './fixture/peer.js'
-import test from 'ava'
+import * as TestContext from './helpers/context.js'
 
-const workers = []
+const test = /** @type {import('ava').TestFn<import('./helpers/context.js').TestContext>} */ (anyTest)
 
-test.after(_ => {
-  workers.forEach(w => w.stop())
+test.beforeEach(async (t) => {
+  t.context = await TestContext.create()
 })
 
-/**
- * @param {Record<string, string>} env
- */
-async function createWorker (env = {}) {
-  const w = await testWorker('src/worker.js', {
-    vars: {
-      PEER_ID_JSON: JSON.stringify(peerId),
-      ...env
-    },
-    experimental: {
-      disableExperimentalWarning: true
-    }
-  })
-  workers.push(w)
-  return w
-}
-
-/**
- * @param {object} worker
- * @param {string} worker.ip
- * @param {number} worker.port
- */
-function getListenAddr ({ port, address }) {
-  return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${peerId.id}`)
-}
+test.afterEach(async t => {
+  await TestContext.destroy(t.context)
+})
 
 test('get /', async t => {
-  const worker = await createWorker()
-  const resp = await worker.fetch()
+  const { worker } = t.context
+  const resp = await worker.dispatchFetch('http://localhost:8787')
   const text = await resp.text()
   t.regex(text, new RegExp(peerId.id))
 })
 
 test('libp2p identify', async t => {
-  const worker = await createWorker({})
-  const libp2p = await createLibp2p({
-    connectionEncryption: [noise()],
-    transports: [webSockets()],
-    streamMuxers: [mplex()],
-    services: {
-      identify: identifyService()
-    }
-  })
-  const peerAddr = getListenAddr(worker)
-  console.log(peerAddr)
-  const peer = await libp2p.dial(peerAddr)
-  t.is(peer.remoteAddr.getPeerId().toString(), peerId.id)
+  const { libp2p, multiaddr } = t.context
+  const peer = await libp2p.dial(multiaddr)
+  t.is(peer.remoteAddr.getPeerId(), peerId.id)
   await t.notThrowsAsync(() => libp2p.services.identify.identify(peer))
 })

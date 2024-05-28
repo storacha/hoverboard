@@ -1,18 +1,14 @@
 export class Metrics {
-  /** all blocks read (r2 + s3 + cache) */
+  /** all blocks read (network + cache) */
   blocks = 0
-  /** count of blocks read from R2 */
-  blocksR2 = 0
-  /** count of blocks read from S3 */
-  blocksS3 = 0
+  /** count of blocks fetched from the network */
+  blocksFetched = 0
   /** count of blocks read from Cache */
   blocksCached = 0
-  /** total block bytes read (r2 + s3 + cache) */
+  /** total block bytes read (network + cache) */
   blockBytes = 0
-  /** block bytes read from R2 */
-  blockBytesR2 = 0
-  /** block bytes read from S3 */
-  blockBytesS3 = 0
+  /** block bytes read from the network */
+  blockBytesFetched = 0
   /** block bytes read from Cloudflare Cache */
   blockBytesCached = 0
   /** count of all index read operations (dynamo + cache) */

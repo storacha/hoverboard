@@ -1,46 +1,21 @@
-import { unstable_dev as testWorker } from 'wrangler'
-import { multiaddr } from '@multiformats/multiaddr'
-import { noise } from '@chainsafe/libp2p-noise'
-import { webSockets } from '@libp2p/websockets'
-import { identifyService } from 'libp2p/identify'
-import { createLibp2p } from 'libp2p'
-import { mplex } from '@libp2p/mplex'
+/* eslint-env worker */
+import anyTest from 'ava'
 import { createHelia } from 'helia'
 import { unixfs } from '@helia/unixfs'
-import { Builder } from './lib/builder.js'
-import { Blob } from 'node:buffer'
-import { createDynamo, createDynamoTable, createS3, createS3Bucket } from './lib/aws.js'
+import { toBlobKey } from './helpers/builder.js'
 import { peerId } from './fixture/peer.js'
-import test from 'ava'
+import { generateBlockLocationClaims } from './helpers/content-claims.js'
+import * as TestContext from './helpers/context.js'
 
-const workers = []
+const test = /** @type {import('ava').TestFn<import('./helpers/context.js').TestContext>} */ (anyTest)
 
-test.after(_ => {
-  workers.forEach(w => w.stop())
+test.beforeEach(async (t) => {
+  t.context = await TestContext.create()
 })
 
-/**
- * @param {import('../src/worker.js').Env} env
- */
-async function createWorker (env = {}) {
-  const w = await testWorker('src/worker.js', {
-    vars: env,
-    experimental: {
-      disableExperimentalWarning: true
-    }
-  })
-  workers.push(w)
-  return w
-}
-
-/**
- * @param {object} worker
- * @param {string} worker.ip
- * @param {number} worker.address
- */
-function getListenAddr ({ port, address }) {
-  return multiaddr(`/ip4/${address}/tcp/${port}/ws/p2p/${peerId.id}`)
-}
+test.afterEach(async t => {
+  await TestContext.destroy(t.context)
+})
 
 /**
  * - create dag, pack to car, add indexes to dynamo and blocks to s3
@@ -51,35 +26,19 @@ function getListenAddr ({ port, address }) {
  */
 test('helia bitswap', async t => {
   t.timeout(60_000)
-  const [dynamo, s3] = await Promise.all([createDynamo(), createS3()])
-  const [table, bucket] = await Promise.all([createDynamoTable(dynamo.client), createS3Bucket(s3.client)])
-  const builder = new Builder(dynamo.client, table, s3.client, 'us-west-2', bucket)
-  const encoder = new TextEncoder()
+
+  const { builder, bucketService, claimsService, libp2p, multiaddr } = t.context
+
   const expected = 'hoverboard 🛹'
-  const blob = new Blob([encoder.encode(expected)])
-  const root = await builder.add(blob)
+  const blob = new Blob([new TextEncoder().encode(expected)])
+  const { root, shards } = await builder.add(blob)
 
-  console.log('Creating local hoverboard')
-  const worker = await createWorker({
-    S3_ENDPOINT: s3.endpoint,
-    DYNAMO_ENDPOINT: dynamo.endpoint,
-    DYNAMO_REGION: dynamo.region,
-    DYNAMO_TABLE: table,
-    AWS_ACCESS_KEY_ID: s3.credentials.accessKeyId,
-    AWS_SECRET_ACCESS_KEY: s3.credentials.secretAccessKey,
-    PEER_ID_JSON: JSON.stringify(peerId)
-  })
-  const hoverboard = getListenAddr(worker)
+  const location = new URL(toBlobKey(shards[0].multihash), bucketService.url)
+  const res = await fetch(location)
+  if (!res.body) throw new Error('missing response body')
 
-  console.log('Creating local libp2p')
-  const libp2p = await createLibp2p({
-    connectionEncryption: [noise()],
-    transports: [webSockets()],
-    streamMuxers: [mplex()],
-    services: {
-      identify: identifyService()
-    }
-  })
+  const claims = await generateBlockLocationClaims(claimsService.signer, shards[0], res.body, location)
+  t.context.claimsService.setClaims(claims)
 
   console.log('Creating local helia')
   const helia = await createHelia({
@@ -87,9 +46,9 @@ test('helia bitswap', async t => {
   })
   const heliaFs = unixfs(helia)
 
-  console.log(`Dialing ${hoverboard}`)
-  const peer = await libp2p.dial(hoverboard)
-  t.is(peer.remoteAddr.getPeerId().toString(), peerId.id)
+  console.log(`Dialing ${multiaddr}`)
+  const peer = await libp2p.dial(multiaddr)
+  t.is(peer.remoteAddr.getPeerId(), peerId.id)
 
   const decoder = new TextDecoder('utf8')
   let text = ''
