@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/web3-storage/hoverboard/compare/v2.0.0...v2.0.1) (2024-05-28)
+
+
+### Bug Fixes
+
+* batching blob fetcher ([150de87](https://github.com/web3-storage/hoverboard/commit/150de874596922f451a610c63a831ea83499266a))
+
 ## [2.0.0](https://github.com/web3-storage/hoverboard/compare/v1.3.2...v2.0.0) (2024-05-28)
 
 
