@@ -48,7 +48,7 @@ export class CachingLocator {
     if (cached) {
       this.metrics.indexes++
       this.metrics.indexesCached++
-      return cached.json()
+      return { ok: Location.decode(new Uint8Array(await cached.arrayBuffer())) }
     }
     const res = await this.locator.locate(digest)
     if (res.ok) {

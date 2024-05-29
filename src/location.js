@@ -10,7 +10,10 @@ export const encode = entry => dagCBOR.encode({
   }))
 })
 
-/** @param {Uint8Array} bytes */
+/**
+ * @param {Uint8Array} bytes
+ * @returns {import('@web3-storage/blob-fetcher').Location}
+ */
 export const decode = bytes => {
   const raw = dagCBOR.decode(bytes)
   return {
