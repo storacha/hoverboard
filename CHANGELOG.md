@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/web3-storage/hoverboard/compare/v2.0.1...v2.0.2) (2024-05-29)
+
+
+### Bug Fixes
+
+* cached locator response ([6944afc](https://github.com/web3-storage/hoverboard/commit/6944afcc6db8c43696fa03eb2973f4abd98c7f06))
+
 ## [2.0.1](https://github.com/web3-storage/hoverboard/compare/v2.0.0...v2.0.1) (2024-05-28)
 
 
