@@ -109,6 +109,7 @@ export class CachingBlockStore {
       this.metrics.blocksCached++
       this.metrics.blockBytes += bytes.byteLength
       this.metrics.blockBytesCached += bytes.byteLength
+      return bytes
     }
     const res = await this.blockstore.get(cid)
     if (res) {
