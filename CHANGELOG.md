@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.4](https://github.com/web3-storage/hoverboard/compare/v2.0.3...v2.0.4) (2024-05-29)
+
+
+### Bug Fixes
+
+* upgrade to latest content-claims ([23ea45e](https://github.com/web3-storage/hoverboard/commit/23ea45e489ec51551da6ad81bdfd8026b2085289))
+
+
+### Other Changes
+
+* move content-claims to devDep ([3676487](https://github.com/web3-storage/hoverboard/commit/3676487d2a61247c012781a5a7d2ea45887aa340))
+
 ## [2.0.3](https://github.com/web3-storage/hoverboard/compare/v2.0.2...v2.0.3) (2024-05-29)
 
 
