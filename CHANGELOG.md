@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.5](https://github.com/web3-storage/hoverboard/compare/v2.0.4...v2.0.5) (2024-06-13)
+
+
+### Bug Fixes
+
+* upgrade blob-fetcher dependency ([c48b8f7](https://github.com/web3-storage/hoverboard/commit/c48b8f75be2b56583ecfdd6114bb53970c80b0b5))
+
 ## [2.0.4](https://github.com/web3-storage/hoverboard/compare/v2.0.3...v2.0.4) (2024-05-29)
 
 
