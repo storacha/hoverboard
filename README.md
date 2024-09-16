@@ -4,11 +4,23 @@ An [IPFS Bitswap] Peer Cloudflare Worker
 
 ![hoverboard overview diagram](./docs/hoverboard.png)
 
+## Usage
+
+You can connect to hoverboard from any compatible libp2p node that supports the (secure) websocket transport.
+
+### Peer Address
+
+The libp2p multiaddr of the production hoverboard deployment run by the Storacha Network is:
+
+```
+/dns4/elastic.dag.house/tcp/443/wss/p2p/bafzbeibhqavlasjc7dvbiopygwncnrtvjd2xmryk5laib7zyjor6kf3avm
+```
+
 ## Getting started
 
 Install `node` >= 18, and `wrangler` >= 3
 
-Copy `.example.dev.vars` to `.dev.vars` and set the AWS access keys vars.
+Copy `.example.dev.vars` to `.dev.vars` and set the required environment variables.
 
 Run `npm install` to install package dependencies.
 
