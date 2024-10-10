@@ -1,9 +1,9 @@
 import { multiaddr } from '@multiformats/multiaddr'
 import { noise } from '@chainsafe/libp2p-noise'
 import { webSockets } from '@libp2p/websockets'
-import { identifyService } from 'libp2p/identify'
+import { identify } from '@libp2p/identify'
 import * as Libp2p from 'libp2p'
-import { mplex } from '@libp2p/mplex'
+import { yamux } from '@chainsafe/libp2p-yamux'
 import { peerId } from '../fixture/peer.js'
 
 export { peerId }
@@ -19,10 +19,10 @@ export function getListenAddr ({ port, host }) {
 
 export const createLibp2p = () =>
   Libp2p.createLibp2p({
-    connectionEncryption: [noise()],
+    connectionEncrypters: [noise()],
     transports: [webSockets()],
-    streamMuxers: [mplex()],
+    streamMuxers: [yamux()],
     services: {
-      identify: identifyService()
+      identify: identify()
     }
   })
