@@ -14,10 +14,13 @@ jobs:
 
   changelog:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     outputs:
       releases_created: ${{ steps.tag-release.outputs.releases_created }}
     steps:
-      - uses: google-github-actions/release-please-action@v3
+      - uses: googleapis/release-please-action@v4
         id: tag-release
         with:
           release-type: node
@@ -35,12 +38,12 @@ jobs:
     if: needs.changelog.outputs.releases_created == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-npm
-      - uses: cloudflare/wrangler-action@2.0.0
+      - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_TOKEN }}
-          command: deploy --env staging
+          environment: 'staging'
 
   release-production:
     name: production
@@ -52,9 +55,9 @@ jobs:
     if: needs.changelog.outputs.releases_created
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-npm
-      - uses: cloudflare/wrangler-action@2.0.0
+      - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CF_TOKEN }}
-          command: deploy --env production
+          environment: 'production'
