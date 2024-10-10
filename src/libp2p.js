@@ -1,38 +1,44 @@
-import toMultiaddr from '@multiformats/uri-to-multiaddr'
-import { createFromJSON } from '@libp2p/peer-id-factory'
+import { uriToMultiaddr } from '@multiformats/uri-to-multiaddr'
+import { privateKeyFromProtobuf } from '@libp2p/crypto/keys'
+import { fromString } from 'uint8arrays'
 import { Miniswap, BITSWAP_PROTOCOL } from 'miniswap'
-import { identifyService } from 'libp2p/identify'
+import { identify } from '@libp2p/identify'
 import { noise } from '@chainsafe/libp2p-noise'
 import { yamux } from '@chainsafe/libp2p-yamux'
 import { mplex } from '@libp2p/mplex'
 import { createLibp2p } from 'libp2p'
 
-/** @typedef {import('./worker.js').Env} Env */
+/**
+ * @typedef {import('./worker.js').Env} Env
+ * @typedef {import('cf-libp2p-ws-transport').WebSocketsComponents} WebSocketsComponents
+ * @typedef {import('cf-libp2p-ws-transport').WebSockets} WebSockets
+ */
 
 /**
  * Setup our libp2p service
  * @param {Env} env
  */
-export async function getPeerId (env) {
-  return createFromJSON(JSON.parse(env.PEER_ID_JSON))
+export function getPrivateKey (env) {
+  const bytes = fromString(JSON.parse(env.PEER_ID_JSON).privKey, 'base64pad')
+  return privateKeyFromProtobuf(bytes)
 }
 
 /**
  * Setup our libp2p service
  * @param {Env} env
- * @param {import('cf-libp2p-ws-transport').WebSockets} transport
+ * @param {() => (components: WebSocketsComponents) => WebSockets} transport
  * @param {import('@multiformats/multiaddr').Multiaddr} listenAddr
  */
 export async function getLibp2p (env, transport, listenAddr) {
-  const peerId = await getPeerId(env)
+  const privateKey = getPrivateKey(env)
   const libp2p = await createLibp2p({
-    peerId,
+    privateKey,
     addresses: { listen: [listenAddr.toString()] },
-    transports: [() => transport],
-    streamMuxers: [mplex(), yamux()],
-    connectionEncryption: [noise()],
+    transports: [transport()],
+    streamMuxers: [yamux(), mplex()],
+    connectionEncrypters: [noise()],
     services: {
-      identify: identifyService()
+      identify: identify()
     }
   })
   return libp2p
@@ -80,7 +86,6 @@ function asError (err) {
  * @param {import('@multiformats/multiaddr').Multiaddr} listenAddr
  */
 export function getWebSocketListener (transport, listenAddr) {
-  // @ts-expect-error
   const listener = transport.listenerForMultiaddr(listenAddr)
   if (!listener) {
     throw new Error(`No listener for provided listen address ${listenAddr}`)
@@ -93,5 +98,5 @@ export function getWebSocketListener (transport, listenAddr) {
  * @param {Request} request
  */
 export function getListenAddr (request) {
-  return toMultiaddr(request.url.replace('http', 'ws'))
+  return uriToMultiaddr(request.url.replace('http', 'ws'))
 }
