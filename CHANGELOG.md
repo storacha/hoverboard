@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.6](https://github.com/storacha/hoverboard/compare/v2.0.5...v2.0.6) (2024-10-10)
+
+
+### Bug Fixes
+
+* upgrade dependencies ([#34](https://github.com/storacha/hoverboard/issues/34)) ([61c9ed8](https://github.com/storacha/hoverboard/commit/61c9ed85ba8cb485582d3c9dbd92b5d07440c5f8))
+
 ## [2.0.5](https://github.com/web3-storage/hoverboard/compare/v2.0.4...v2.0.5) (2024-06-13)
 
 
