@@ -46,7 +46,7 @@
     "events": "^3.3.0",
     "libp2p": "^2.1.8",
     "lnmap": "^2.0.0",
-    "miniswap": "^4.0.0",
+    "miniswap": "^4.0.1",
     "multiformats": "^13.1.0",
     "p-defer": "^4.0.0",
     "uint8arrays": "^5.1.0"
