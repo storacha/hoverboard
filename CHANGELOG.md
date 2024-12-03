@@ -1,5 +1,41 @@
 # Changelog
 
+## [3.0.0](https://github.com/storacha/hoverboard/compare/v2.0.7...v3.0.0) (2024-12-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* hoverboard no longer uses R2 binding, and does not talk to DynamoDB or S3. Instead it uses content claims to determine block locations.
+
+### Features
+
+* add metrics and filter subrequest errors ([#11](https://github.com/storacha/hoverboard/issues/11)) ([29b2fee](https://github.com/storacha/hoverboard/commit/29b2fee5aa955f64867af1941da589d227b04846))
+* add release process ([#5](https://github.com/storacha/hoverboard/issues/5)) ([71fd1b8](https://github.com/storacha/hoverboard/commit/71fd1b87362ed6ed308ac9514c05d2e2a03c4092))
+* add test for bitswap roundtrip ([#3](https://github.com/storacha/hoverboard/issues/3)) ([ee0b73b](https://github.com/storacha/hoverboard/commit/ee0b73b1db76d0b3d53ca2df48e613b680aaddc6))
+* denylist and caching ([#4](https://github.com/storacha/hoverboard/issues/4)) ([d48b9e1](https://github.com/storacha/hoverboard/commit/d48b9e118987de149f56f85b00440d0849d524d6))
+* DynamoBlockFinder and DagHausBlockStore ([b6a2d21](https://github.com/storacha/hoverboard/commit/b6a2d2112ffb40c7bba747aa9713af18c7996cc9))
+* enable yamux ([#13](https://github.com/storacha/hoverboard/issues/13)) ([da749a0](https://github.com/storacha/hoverboard/commit/da749a0f78b4944851aabeebc39390c1f8224640))
+* r2 and s3 blockstore ([b24dd8e](https://github.com/storacha/hoverboard/commit/b24dd8e769b024fce73a4c7f618d8309c6d92b6f))
+* ship logs to loki ([#17](https://github.com/storacha/hoverboard/issues/17)) ([9e106d2](https://github.com/storacha/hoverboard/commit/9e106d25c8a50b0cf7df3fd6a4b9ca82758b426b))
+* show deployments on repo ([#9](https://github.com/storacha/hoverboard/issues/9)) ([18f2581](https://github.com/storacha/hoverboard/commit/18f2581571435ae090f6a26b57e896498f314061))
+* use content claims ([#26](https://github.com/storacha/hoverboard/issues/26)) ([c25860c](https://github.com/storacha/hoverboard/commit/c25860c31ca41f328468c034c42cd8b75182c466))
+
+
+### Bug Fixes
+
+* add missing dial script ([d8dbe23](https://github.com/storacha/hoverboard/commit/d8dbe23e0c437ca59d6c4d59a087b1f8a3cd5e4e))
+* await stream close ([54d8fa9](https://github.com/storacha/hoverboard/commit/54d8fa934e88ef5833d2359e57c4926fbf1457ae))
+* batching blob fetcher ([150de87](https://github.com/storacha/hoverboard/commit/150de874596922f451a610c63a831ea83499266a))
+* cached locator response ([6944afc](https://github.com/storacha/hoverboard/commit/6944afcc6db8c43696fa03eb2973f4abd98c7f06))
+* dont batch requests to s3 (yet) ([#10](https://github.com/storacha/hoverboard/issues/10)) ([64e3382](https://github.com/storacha/hoverboard/commit/64e3382ac1bfba9c177f3aec34508271d26f714c))
+* read blobs ([#24](https://github.com/storacha/hoverboard/issues/24)) ([016faa1](https://github.com/storacha/hoverboard/commit/016faa198bae483a7087252806fe8ef203e3e242))
+* return cached block ([88798f0](https://github.com/storacha/hoverboard/commit/88798f0508fa2aeb42523f3f14835f2f91035bf3))
+* set local listen addr from request ([#15](https://github.com/storacha/hoverboard/issues/15)) ([b3d402b](https://github.com/storacha/hoverboard/commit/b3d402ba84889b4926b92e4a802bbeade03eded6))
+* temporary fix to support blobs ([#23](https://github.com/storacha/hoverboard/issues/23)) ([6dca448](https://github.com/storacha/hoverboard/commit/6dca448dbb507dfa2a98b95451a0ae2ff15587fb))
+* upgrade blob-fetcher dependency ([c48b8f7](https://github.com/storacha/hoverboard/commit/c48b8f75be2b56583ecfdd6114bb53970c80b0b5))
+* upgrade dependencies ([#34](https://github.com/storacha/hoverboard/issues/34)) ([61c9ed8](https://github.com/storacha/hoverboard/commit/61c9ed85ba8cb485582d3c9dbd92b5d07440c5f8))
+* upgrade to latest content-claims ([23ea45e](https://github.com/storacha/hoverboard/commit/23ea45e489ec51551da6ad81bdfd8026b2085289))
+
 ## [2.0.7](https://github.com/storacha/hoverboard/compare/v2.0.6...v2.0.7) (2024-12-03)
 
 
