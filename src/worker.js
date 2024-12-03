@@ -7,6 +7,9 @@ import { getBlockstore } from './blocks.js'
 import { version } from '../package.json'
 import { Metrics } from './metrics.js'
 
+import debug from 'weald'
+debug.enable('*')
+
 /**
  * @typedef {object} Env
  * @prop {KVNamespace} DENYLIST - KV binding for denylist
