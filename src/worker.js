@@ -7,8 +7,8 @@ import { getBlockstore } from './blocks.js'
 import { version } from '../package.json'
 import { Metrics } from './metrics.js'
 
-import debug from 'weald'
-debug.enable('*')
+// import debug from 'weald'
+// debug.enable('*')
 
 /**
  * @typedef {object} Env

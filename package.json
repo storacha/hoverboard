@@ -3,7 +3,7 @@
   "description": "An IPFS Bitswap Peer in Cloudflare Workers",
   "version": "2.0.7",
   "private": true,
-  "license": "(Apache-2.0 AND MIT)",
+  "license": "Apache-2.0 OR MIT",
   "type": "module",
   "scripts": {
     "build": "esbuild --bundle src/worker.js --format=esm --sourcemap --minify --outfile=dist/worker.mjs",
