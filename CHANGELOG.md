@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.7](https://github.com/storacha/hoverboard/compare/v2.0.6...v2.0.7) (2024-12-03)
+
+
+### Bug Fixes
+
+* await stream close ([54d8fa9](https://github.com/storacha/hoverboard/commit/54d8fa934e88ef5833d2359e57c4926fbf1457ae))
+
 ## [2.0.6](https://github.com/storacha/hoverboard/compare/v2.0.5...v2.0.6) (2024-10-10)
 
 
