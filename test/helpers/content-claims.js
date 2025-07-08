@@ -1,15 +1,11 @@
-/* global ReadableStream, WritableStream */
-import http from 'node:http'
-import { Writable } from 'node:stream'
-import { CARReaderStream, CARWriterStream, code as carCode } from 'carstream'
-import { sha256 } from 'multiformats/hashes/sha2'
-import { base58btc } from 'multiformats/bases/base58'
-import * as Digest from 'multiformats/hashes/digest'
-import * as Link from 'multiformats/link'
-import * as raw from 'multiformats/codecs/raw'
-import { Map as LinkMap } from 'lnmap'
 import { Assert } from '@web3-storage/content-claims/capability'
-import * as ed25519 from '@ucanto/principal/ed25519'
+import * as Claim from '@storacha/indexing-service-client/claim'
+
+/**
+ * @import { MultihashDigest, UnknownLink, Link } from 'multiformats'
+ * @import { Claim as ClaimView } from '@storacha/indexing-service-client/api'
+ * @import { URI } from '@ucanto/interface'
+ */
 
 /**
  * @typedef {Map<import('multiformats').UnknownLink, import('carstream/api').Block[]>} Claims
@@ -24,97 +20,50 @@ import * as ed25519 from '@ucanto/principal/ed25519'
  */
 
 /**
- * @param {import('@ucanto/interface').Signer} signer
- * @param {import('multiformats').Link} shard
- * @param {ReadableStream<Uint8Array>} carStream CAR file data
- * @param {URL} location
+ * @param {import('@ucanto/interface').Signer} issuer
+ * @param {{
+ *   root: UnknownLink
+ *   shards: Array<{ digest: MultihashDigest, site: URI }>
+ *   index: { cid: Link, site: URI }
+ * }} info
  */
-export const generateBlockLocationClaims = async (signer, shard, carStream, location) => {
-  /** @type {Claims} */
-  const claims = new LinkMap()
-
-  await carStream
-    .pipeThrough(new CARReaderStream())
-    .pipeTo(new WritableStream({
-      async write ({ cid, blockOffset, blockLength }) {
-        const blocks = claims.get(cid) ?? []
-        blocks.push(await generateLocationClaim(signer, shard, location, blockOffset, blockLength))
-        claims.set(cid, blocks)
-      }
-    }))
-
-  return claims
-}
-
-/**
- * @param {import('@ucanto/interface').Signer} signer
- * @param {import('multiformats').UnknownLink} content
- * @param {URL} location
- * @param {number} offset
- * @param {number} length
- */
-export const generateLocationClaim = async (signer, content, location, offset, length) => {
-  const invocation = Assert.location.invoke({
-    issuer: signer,
-    audience: signer,
-    with: signer.did(),
+export const generateClaims = async (issuer, { root, shards, index }) => {
+  /** @type {ClaimView[]} */
+  const claims = []
+  const indexClaim = await Assert.index.delegate({
+    issuer,
+    audience: issuer,
+    with: issuer.did(),
     nb: {
-      content,
-      location: [
-        /** @type {import('@ucanto/interface').URI} */
-        (location.toString())
-      ],
-      range: { offset, length }
+      content: root,
+      index: index.cid
     }
   })
-  return await encode(invocation)
-}
+  claims.push(Claim.from(indexClaim))
 
-/**
- * Encode a claim to a block.
- * @param {import('@ucanto/interface').IPLDViewBuilder<import('@ucanto/interface').Delegation>} invocation
- */
-const encode = async invocation => {
-  const view = await invocation.buildIPLDView()
-  const bytes = await view.archive()
-  if (bytes.error) throw new Error('failed to archive')
-  return { cid: Link.create(carCode, await sha256.digest(bytes.ok)), bytes: bytes.ok }
-}
+  const indexLocation = await Assert.location.delegate({
+    issuer,
+    audience: issuer,
+    with: issuer.did(),
+    nb: {
+      content: index.cid,
+      location: [index.site]
+    }
+  })
+  claims.push(Claim.from(indexLocation))
 
-/** @returns {Promise<MockClaimsService>} */
-export const mockClaimsService = async () => {
-  let callCount = 0
-  /** @type {Claims} */
-  let claims = new LinkMap()
-  /** @param {Claims} s */
-  const setClaims = s => { claims = s }
-  const getCallCount = () => callCount
-  const resetCallCount = () => {
-    callCount = 0
-  }
-
-  const server = http.createServer(async (req, res) => {
-    callCount++
-    const content = Link.create(raw.code, Digest.decode(base58btc.decode(String(req.url?.split('/')[3]))))
-    const blocks = [...claims.get(content) ?? []]
-    const readable = new ReadableStream({
-      pull (controller) {
-        const block = blocks.shift()
-        if (!block) return controller.close()
-        controller.enqueue(block)
+  for (const { digest, site } of shards) {
+    const shardLocation = await Assert.location.delegate({
+      issuer,
+      audience: issuer,
+      with: issuer.did(),
+      nb: {
+        content: { digest: digest.bytes },
+        location: [site]
       }
     })
-    await readable
-      .pipeThrough(new CARWriterStream())
-      .pipeTo(Writable.toWeb(res))
-  })
-  await new Promise(resolve => server.listen(resolve))
-  const close = () => {
-    server.closeAllConnections()
-    return new Promise(resolve => server.close(resolve))
+    claims.push(Claim.from(shardLocation))
   }
-  // @ts-expect-error
-  const { port } = server.address()
-  const url = new URL(`http://127.0.0.1:${port}`)
-  return { setClaims, close, url, signer: await ed25519.generate(), getCallCount, resetCallCount }
+
+  return claims
 }

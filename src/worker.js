@@ -4,7 +4,7 @@ import defer from 'p-defer'
 import { peerIdFromPrivateKey } from '@libp2p/peer-id'
 import { enableBitswap, getLibp2p, getListenAddr, getPrivateKey, getWebSocketListener } from './libp2p.js'
 import { getBlockstore } from './blocks.js'
-import { version } from '../package.json'
+import pkg from '../package.json'
 import { Metrics } from './metrics.js'
 
 // import debug from 'weald'
@@ -14,7 +14,7 @@ import { Metrics } from './metrics.js'
  * @typedef {object} Env
  * @prop {KVNamespace} DENYLIST - KV binding for denylist
  * @prop {string} PEER_ID_JSON - secret stringified json peerId spec for this node
- * @prop {string} CONTENT_CLAIMS_URL
+ * @prop {string} INDEXING_SERVICE_URL
  */
 
 /** @type {ExportedHandler<Env>} */
@@ -77,7 +77,7 @@ export default {
 export function getHome (request, env) {
   const peerId = peerIdFromPrivateKey(getPrivateKey(env))
   const addr = getListenAddr(request).encapsulate(`/p2p/${peerId}`)
-  const body = `⁂ hoverboard v${version} ${addr}\n`
+  const body = `⁂ hoverboard v${pkg.version} ${addr}\n`
   return new Response(body, {
     headers: { 'content-type': 'text/plain; charset=utf-8' }
   })

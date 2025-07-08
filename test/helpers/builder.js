@@ -2,23 +2,29 @@
 import * as Link from 'multiformats/link'
 import { sha256 } from 'multiformats/hashes/sha2'
 import { base58btc } from 'multiformats/bases/base58'
-import { UnixFS, ShardingStream } from '@web3-storage/upload-client'
+import { UnixFS, ShardingStream } from '@storacha/upload-client'
+import * as ShardedDAGIndexUtil from '@storacha/blob-index/util'
+
+/** @import { URI } from '@ucanto/interface' */
 
 const carCode = 0x0202
 
 export class Builder {
   #bucket
+  #endpoint
 
   /**
    * @param {{ put: (key: string, value: Uint8Array) => Promise<unknown> }} bucket
+   * @param {URL} endpoint
    */
-  constructor (bucket) {
+  constructor (bucket, endpoint) {
     this.#bucket = bucket
+    this.#endpoint = endpoint
   }
 
   /**
-   * @param {import('@web3-storage/upload-client/types').BlobLike|import('@web3-storage/upload-client/types').FileLike[]} input
-   * @param {import('@web3-storage/upload-client/types').ShardingOptions} [options]
+   * @param {import('@storacha/upload-client/types').BlobLike|import('@storacha/upload-client/types').FileLike[]} input
+   * @param {import('@storacha/upload-client/types').ShardingOptions} [options]
    */
   async add (input, options = {}) {
     console.log('Adding ' + (Array.isArray(input) ? `${input.length} file(s)` : '1 blob') + '...')
@@ -26,14 +32,16 @@ export class Builder {
       ? UnixFS.createDirectoryEncoderStream(input)
       : UnixFS.createFileEncoderStream(input)
 
-    /** @type {import('multiformats').UnknownLink?} */
-    let root = null
+    /** @type {import('multiformats').UnknownLink[]} */
+    const blockLinks = []
     /** @type {import('multiformats').Link[]} */
     const shards = []
+    /** @type {Uint8Array[]} */
+    const shardArchives = []
     await unixFsEncoder
       .pipeThrough(new TransformStream({
         transform (block, controller) {
-          root = block.cid
+          blockLinks.push(block.cid)
           controller.enqueue(block)
         }
       }))
@@ -44,16 +52,40 @@ export class Builder {
           const digest = await sha256.digest(bytes)
           await this.#bucket.put(toBlobKey(digest), bytes)
           shards.push(Link.create(carCode, digest))
+          shardArchives.push(bytes)
         }
       }))
 
-    if (!root) throw new Error('no blocks generated')
-    return { root, shards }
+    const root = blockLinks[blockLinks.length - 1]
+    const index = await ShardedDAGIndexUtil.fromShardArchives(root, shardArchives)
+    const archiveRes = await index.archive()
+    if (archiveRes.error) {
+      throw new Error('failed to archive index', { cause: archiveRes.error })
+    }
+    const indexDigest = await sha256.digest(archiveRes.ok)
+    const indexLink = Link.create(carCode, indexDigest)
+    await this.#bucket.put(toBlobKey(indexDigest), archiveRes.ok)
+
+    return {
+      root,
+      shards: shards.map(s => ({
+        digest: s.multihash,
+        site:
+          /** @type {URI} */
+          (new URL(toBlobKey(s.multihash), this.#endpoint).toString())
+      })),
+      index: {
+        cid: indexLink,
+        site:
+          /** @type {URI} */
+          (new URL(toBlobKey(indexLink.multihash), this.#endpoint).toString())
+      }
+    }
   }
 }
 
 /** @param {import('multiformats').MultihashDigest} digest */
-export const toBlobKey = digest => {
+const toBlobKey = digest => {
   const digestString = base58btc.encode(digest.bytes)
   return `${digestString}/${digestString}.blob`
 }

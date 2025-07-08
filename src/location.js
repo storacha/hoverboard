@@ -6,7 +6,8 @@ export const encode = entry => dagCBOR.encode({
   digest: entry.digest.bytes,
   site: entry.site.map(s => ({
     location: s.location.map(l => l.toString()),
-    range: s.range
+    range: s.range,
+    ...(s.space ? { space: s.space } : {})
   }))
 })
 
@@ -20,7 +21,8 @@ export const decode = bytes => {
     digest: Digest.decode(raw.digest),
     site: raw.site.map((/** @type {any} */ s) => ({
       location: s.location.map((/** @type {string} */l) => new URL(l)),
-      range: s.range
+      range: s.range,
+      space: raw.space
     }))
   }
 }
