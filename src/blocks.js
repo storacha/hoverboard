@@ -2,7 +2,8 @@
 import { base58btc } from 'multiformats/bases/base58'
 import { DenyingBlockStore } from './deny.js'
 import * as BatchingFetcher from '@web3-storage/blob-fetcher/fetcher/batching'
-import * as ContentClaimsLocator from '@web3-storage/blob-fetcher/locator/content-claims'
+import * as Locator from '@web3-storage/blob-fetcher/locator'
+import { Client as IndexingServiceClient } from '@storacha/indexing-service-client'
 import * as Location from './location.js'
 
 /**
@@ -20,7 +21,8 @@ import * as Location from './location.js'
  * @param {import('./metrics.js').Metrics} metrics
  */
 export async function getBlockstore (env, ctx, metrics) {
-  const locator = ContentClaimsLocator.create({ serviceURL: env.CONTENT_CLAIMS_URL ? new URL(env.CONTENT_CLAIMS_URL) : undefined })
+  const client = new IndexingServiceClient({ serviceURL: env.INDEXING_SERVICE_URL ? new URL(env.INDEXING_SERVICE_URL) : undefined })
+  const locator = Locator.create({ client })
   const cachingLocator = new CachingLocator(locator, await caches.open('index'), ctx, metrics)
   const blocks = new BlockStore(cachingLocator, metrics)
   const cached = new CachingBlockStore(blocks, await caches.open('blockstore:bytes'), ctx, metrics)
@@ -56,6 +58,11 @@ export class CachingLocator {
       this.ctx.waitUntil(this.cache.put(key, new Response(Location.encode(res.ok))))
     }
     return res
+  }
+
+  /** @type {import('@web3-storage/blob-fetcher').Locator['scopeToSpaces']} */
+  async scopeToSpaces () {
+    throw new Error('not implemented')
   }
 
   /** @param {import('multiformats').MultihashDigest} digest */
