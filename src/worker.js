@@ -38,9 +38,7 @@ export default {
       }
       const bs = await getBlockstore(env, ctx, metrics)
       const listenAddr = getListenAddr(request)
-      console.log('WAIYING FOR LIBP@P')
       const libp2p = await getLibp2p(env, () => transportFactory, listenAddr)
-      console.log('libp2p ready')
       libp2p.addEventListener('peer:connect', (evt) => {
         const remotePeer = evt.detail
         console.log({ msg: 'peer:connect', peer: remotePeer.toString() })

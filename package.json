@@ -44,7 +44,7 @@
     "@multiformats/uri-to-multiaddr": "^9.0.1",
     "@storacha/indexing-service-client": "^2.4.0",
     "@web3-storage/blob-fetcher": "^4.0.0",
-    "cf-libp2p-ws-transport": "^2.0.4",
+    "cf-libp2p-ws-transport": "^2.0.5",
     "events": "^3.3.0",
     "libp2p": "^2.1.8",
     "lnmap": "^2.0.0",
